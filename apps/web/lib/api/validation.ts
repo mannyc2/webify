@@ -4,4 +4,5 @@ export {
   batchMarkReadSchema,
   productsQuerySchema,
   eventsQuerySchema,
+  archivedProductsQuerySchema,
 } from "@webify/db";

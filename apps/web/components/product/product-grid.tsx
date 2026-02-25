@@ -14,7 +14,13 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Card } from "@/components/ui/card"
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty"
 import { ProductCard } from "./product-card"
+import { ArchivedProductCard } from "./archived-product-card"
+import { StylePills } from "./style-pills"
 import { useProducts, type ProductFilters } from "@/hooks/use-products"
+import { useProductTypes } from "@/hooks/use-product-types"
+import { useArchivedProducts } from "@/hooks/use-archived-products"
+
+type Source = "current" | "archived"
 
 interface ProductGridProps {
   storeId: string
@@ -23,7 +29,7 @@ interface ProductGridProps {
 function ProductCardSkeleton() {
   return (
     <Card>
-      <Skeleton className="aspect-square rounded-t-2xl" />
+      <Skeleton className="aspect-[3/4] rounded-t-2xl" />
       <div className="space-y-2 p-6 pt-4">
         <Skeleton className="h-4 w-3/4" />
         <div className="flex justify-between">
@@ -36,18 +42,36 @@ function ProductCardSkeleton() {
 }
 
 export function ProductGrid({ storeId }: ProductGridProps) {
+  const [source, setSource] = useState<Source>("current")
   const [search, setSearch] = useState("")
   const [stock, setStock] = useState<ProductFilters["stock"] | null>("all")
   const [sort, setSort] = useState<ProductFilters["sort"] | null>("name")
+  const [selectedType, setSelectedType] = useState<string | null>(null)
 
-  const { products, isLoading } = useProducts(storeId, {
+  const { types } = useProductTypes(storeId)
+  const { products, isLoading: isLoadingCurrent } = useProducts(storeId, {
     search: search || undefined,
     stock: stock ?? undefined,
     sort: sort ?? undefined,
+    type: selectedType ?? undefined,
   })
+  const {
+    products: archivedProducts,
+    isLoading: isLoadingArchived,
+  } = useArchivedProducts(source === "archived" ? storeId : undefined, {
+    search: search || undefined,
+    sort: sort === "name" || sort === "recent" ? sort : undefined,
+  })
+
+  const isLoading = source === "current" ? isLoadingCurrent : isLoadingArchived
 
   return (
     <div className="space-y-4">
+      {/* Style pills (current only) */}
+      {source === "current" && (
+        <StylePills types={types} selected={selectedType} onSelect={setSelectedType} />
+      )}
+
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative flex-1 min-w-[200px]">
@@ -59,24 +83,42 @@ export function ProductGrid({ storeId }: ProductGridProps) {
             className="ps-9"
           />
         </div>
-        <Select value={stock} onValueChange={(v) => setStock(v as ProductFilters["stock"] | null)}>
+        <Select value={source} onValueChange={(v) => setSource(v as Source)}>
           <SelectTrigger>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All Stock</SelectItem>
-            <SelectItem value="in">In Stock</SelectItem>
-            <SelectItem value="out">Out of Stock</SelectItem>
+            <SelectItem value="current">Current</SelectItem>
+            <SelectItem value="archived">Archived</SelectItem>
           </SelectContent>
         </Select>
-        <Select value={sort} onValueChange={(v) => setSort(v as ProductFilters["sort"] | null)}>
+        {source === "current" && (
+          <Select value={stock} onValueChange={(v) => setStock(v as ProductFilters["stock"] | null)}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Stock</SelectItem>
+              <SelectItem value="in">In Stock</SelectItem>
+              <SelectItem value="out">Out of Stock</SelectItem>
+            </SelectContent>
+          </Select>
+        )}
+        <Select
+          value={sort}
+          onValueChange={(v) => setSort(v as ProductFilters["sort"] | null)}
+        >
           <SelectTrigger>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="name">Name</SelectItem>
-            <SelectItem value="price_asc">Price: Low to High</SelectItem>
-            <SelectItem value="price_desc">Price: High to Low</SelectItem>
+            {source === "current" && (
+              <>
+                <SelectItem value="price_asc">Price: Low to High</SelectItem>
+                <SelectItem value="price_desc">Price: High to Low</SelectItem>
+              </>
+            )}
             <SelectItem value="recent">Recent</SelectItem>
           </SelectContent>
         </Select>
@@ -84,27 +126,60 @@ export function ProductGrid({ storeId }: ProductGridProps) {
 
       {/* Grid */}
       {isLoading ? (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {Array.from({ length: 8 }).map((_, i) => (
+        <div className="grid grid-cols-2 gap-4">
+          {Array.from({ length: 6 }).map((_, i) => (
             <ProductCardSkeleton key={i} />
           ))}
         </div>
-      ) : products.length === 0 ? (
+      ) : source === "current" ? (
+        products.length === 0 ? (
+          <Empty>
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <PackageIcon />
+              </EmptyMedia>
+              <EmptyTitle>No products found</EmptyTitle>
+              <EmptyDescription>
+                {search || selectedType
+                  ? "Try adjusting your search or filters."
+                  : "Products will appear after the first sync."}
+              </EmptyDescription>
+            </EmptyHeader>
+          </Empty>
+        ) : (
+          <div className="grid grid-cols-2 gap-4">
+            {products.map((product) => (
+              <ProductCard
+                key={product.id}
+                product={product}
+                storeId={storeId}
+                imageUrl={product.cachedImageUrl ?? undefined}
+              />
+            ))}
+          </div>
+        )
+      ) : archivedProducts.length === 0 ? (
         <Empty>
           <EmptyHeader>
             <EmptyMedia variant="icon">
               <PackageIcon />
             </EmptyMedia>
-            <EmptyTitle>No products found</EmptyTitle>
+            <EmptyTitle>No archived products</EmptyTitle>
             <EmptyDescription>
-              {search ? "Try adjusting your search or filters." : "Products will appear after the first sync."}
+              {search
+                ? "Try adjusting your search."
+                : "Archived products from the Wayback Machine will appear here."}
             </EmptyDescription>
           </EmptyHeader>
         </Empty>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {products.map((product) => (
-            <ProductCard key={product.id} product={product} storeId={storeId} />
+        <div className="grid grid-cols-2 gap-4">
+          {archivedProducts.map((product) => (
+            <ArchivedProductCard
+              key={product.handle}
+              product={product}
+              storeId={storeId}
+            />
           ))}
         </div>
       )}

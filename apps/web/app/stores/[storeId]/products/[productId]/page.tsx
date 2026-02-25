@@ -8,14 +8,18 @@ import { ImageGallery } from "@/components/product/image-gallery"
 import { ProductInfo } from "@/components/product/product-info"
 import { VariantTable } from "@/components/product/variant-table"
 import { PriceHistoryChart } from "@/components/product/price-history-chart"
+import { ArchivedImagesGrid } from "@/components/product/archived-images-grid"
+import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useProduct } from "@/hooks/use-product"
+import { useArchivedImages } from "@/hooks/use-archived-images"
 
 export default function ProductDetailPage() {
   const { storeId, productId } = useParams<{ storeId: string; productId: string }>()
   const { data: product, isPending, error } = useProduct(storeId, productId)
+  const { images: archivedImages } = useArchivedImages(storeId, product?.id)
   const [selectedVariantId, setSelectedVariantId] = useState<number | null>(null)
 
   if (isPending) {
@@ -58,6 +62,11 @@ export default function ProductDetailPage() {
     variants.find((v: Variant) => v.id === effectiveVariantId) ?? null
   const chartVariantId = effectiveVariantId ?? variants[0]?.id
 
+  const hasArchivedImages = archivedImages.length > 0
+  const hasVariants = variants.length > 0
+  const hasTabs = hasVariants || hasArchivedImages
+  const defaultTab = hasVariants ? "variants" : "archived-images"
+
   return (
     <div className="space-y-8">
       <Header title={product.title} />
@@ -74,14 +83,26 @@ export default function ProductDetailPage() {
         />
       </div>
 
-      {/* Tabs: Variants + Price History */}
-      {variants.length > 0 && (
-        <Tabs defaultValue="variants">
-          <TabsList>
+      {/* Tabs: Variants + Price History + Archived Images */}
+      {hasTabs && <Tabs defaultValue={defaultTab}>
+        <TabsList>
+          {hasVariants && (
             <TabsTrigger value="variants">All Variants</TabsTrigger>
+          )}
+          {hasVariants && (
             <TabsTrigger value="price-history">Price History</TabsTrigger>
-          </TabsList>
+          )}
+          {hasArchivedImages && (
+            <TabsTrigger value="archived-images" className="gap-1.5">
+              Archived Images
+              <Badge variant="secondary" className="ml-1 size-5 justify-center rounded-full p-0 text-[10px]">
+                {archivedImages.length}
+              </Badge>
+            </TabsTrigger>
+          )}
+        </TabsList>
 
+        {hasVariants && (
           <TabsContent value="variants">
             <Card>
               <CardContent className="pt-6">
@@ -93,7 +114,9 @@ export default function ProductDetailPage() {
               </CardContent>
             </Card>
           </TabsContent>
+        )}
 
+        {hasVariants && (
           <TabsContent value="price-history">
             <Card>
               <CardContent className="pt-6">
@@ -110,8 +133,21 @@ export default function ProductDetailPage() {
               </CardContent>
             </Card>
           </TabsContent>
-        </Tabs>
-      )}
+        )}
+
+        {hasArchivedImages && (
+          <TabsContent value="archived-images">
+            <Card>
+              <CardContent className="pt-6">
+                <ArchivedImagesGrid
+                  images={archivedImages}
+                  productTitle={product.title}
+                />
+              </CardContent>
+            </Card>
+          </TabsContent>
+        )}
+      </Tabs>}
     </div>
   )
 }

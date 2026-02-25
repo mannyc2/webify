@@ -1,4 +1,4 @@
-import { eq, inArray, and, or, lt, isNull } from "drizzle-orm";
+import { eq, inArray, and, or, lt, isNull, desc } from "drizzle-orm";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
 import * as schema from "./schema";
 
@@ -33,6 +33,7 @@ export function getProductsByStore(
     search?: string;
     stock?: "all" | "in" | "out";
     sort?: "name" | "price_asc" | "price_desc" | "recent";
+    productType?: string;
     offset?: number;
     limit?: number;
   },
@@ -50,6 +51,10 @@ export function getProductsByStore(
     where.cachedIsAvailable = true;
   } else if (options?.stock === "out") {
     where.cachedIsAvailable = false;
+  }
+
+  if (options?.productType) {
+    where.productType = options.productType;
   }
 
   let orderBy: Record<string, string>;
@@ -73,6 +78,26 @@ export function getProductsByStore(
     offset: options?.offset ?? 0,
     limit: options?.limit ?? 50,
   });
+}
+
+export async function getProductTypesByStore(
+  db: Database,
+  storeDomain: string,
+): Promise<string[]> {
+  const rows = await db
+    .selectDistinct({ productType: schema.products.productType })
+    .from(schema.products)
+    .where(
+      and(
+        eq(schema.products.storeDomain, storeDomain),
+        eq(schema.products.isRemoved, false),
+      ),
+    )
+    .orderBy(schema.products.productType);
+
+  return rows
+    .map((r) => r.productType)
+    .filter((t): t is string => t != null && t !== "");
 }
 
 export function getProductById(db: Database, productId: number) {
@@ -306,4 +331,177 @@ export function getArchiveImportJobs(db: Database, storeDomain: string) {
     where: { storeDomain },
     orderBy: { startedAt: "desc" },
   });
+}
+
+// ---------------------------------------------------------------------------
+// archived images — images from wayback data not in current product images
+// ---------------------------------------------------------------------------
+
+export async function getArchivedImagesByHandle(
+  db: Database,
+  storeDomain: string,
+  handle: string,
+  currentImageUrls: string[],
+) {
+  const rows = await db.query.waybackProductData.findMany({
+    where: { storeDomain, handle },
+    orderBy: { capturedAt: "asc" },
+  });
+
+  // Collect all images across snapshots, tracking first/last seen
+  const imageMap = new Map<string, { url: string; firstSeen: string; lastSeen: string }>();
+  const currentSet = new Set(currentImageUrls);
+
+  for (const row of rows) {
+    if (!row.imagesJson) continue;
+    let urls: string[];
+    try {
+      urls = JSON.parse(row.imagesJson);
+    } catch {
+      continue;
+    }
+    for (const url of urls) {
+      if (typeof url !== "string" || currentSet.has(url)) continue;
+      const existing = imageMap.get(url);
+      if (existing) {
+        if (row.capturedAt < existing.firstSeen) existing.firstSeen = row.capturedAt;
+        if (row.capturedAt > existing.lastSeen) existing.lastSeen = row.capturedAt;
+      } else {
+        imageMap.set(url, { url, firstSeen: row.capturedAt, lastSeen: row.capturedAt });
+      }
+    }
+  }
+
+  return Array.from(imageMap.values());
+}
+
+// ---------------------------------------------------------------------------
+// archived products — products only in wayback data, not in products table
+// ---------------------------------------------------------------------------
+
+export async function getArchivedProducts(
+  db: Database,
+  storeDomain: string,
+  options?: {
+    search?: string;
+    sort?: "name" | "recent";
+    offset?: number;
+    limit?: number;
+  },
+) {
+  // Get all handles that exist in the live products table
+  const liveHandles = await db
+    .selectDistinct({ handle: schema.products.handle })
+    .from(schema.products)
+    .where(eq(schema.products.storeDomain, storeDomain));
+  const liveSet = new Set(liveHandles.map((r) => r.handle));
+
+  // Get latest wayback_product_data row per handle
+  const allRows = await db
+    .select()
+    .from(schema.waybackProductData)
+    .where(eq(schema.waybackProductData.storeDomain, storeDomain))
+    .orderBy(desc(schema.waybackProductData.capturedAt));
+
+  // Deduplicate: keep latest row per handle, exclude live handles
+  const handleMap = new Map<string, typeof allRows[number]>();
+  const snapshotCounts = new Map<string, number>();
+
+  for (const row of allRows) {
+    if (liveSet.has(row.handle)) continue;
+    snapshotCounts.set(row.handle, (snapshotCounts.get(row.handle) ?? 0) + 1);
+    if (!handleMap.has(row.handle)) {
+      handleMap.set(row.handle, row);
+    }
+  }
+
+  let results = Array.from(handleMap.values());
+
+  // Search filter
+  if (options?.search) {
+    const term = options.search.toLowerCase();
+    results = results.filter((r) => r.title?.toLowerCase().includes(term));
+  }
+
+  // Sort
+  if (options?.sort === "recent") {
+    results.sort((a, b) => b.capturedAt.localeCompare(a.capturedAt));
+  } else {
+    results.sort((a, b) => (a.title ?? "").localeCompare(b.title ?? ""));
+  }
+
+  const total = results.length;
+  const offset = options?.offset ?? 0;
+  const limit = options?.limit ?? 50;
+  results = results.slice(offset, offset + limit);
+
+  return {
+    data: results.map((r) => {
+      let thumbnail: string | null = null;
+      try {
+        const imgs = JSON.parse(r.imagesJson ?? "[]");
+        if (imgs.length > 0) thumbnail = imgs[0];
+      } catch { /* ignore */ }
+      return {
+        handle: r.handle,
+        title: r.title ?? r.handle,
+        vendor: r.vendor,
+        productType: r.productType,
+        rawPrice: r.rawPrice,
+        capturedAt: r.capturedAt,
+        thumbnail,
+        snapshotCount: snapshotCounts.get(r.handle) ?? 1,
+      };
+    }),
+    total,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// archived product detail — all wayback data for a single handle
+// ---------------------------------------------------------------------------
+
+export async function getArchivedProductByHandle(
+  db: Database,
+  storeDomain: string,
+  handle: string,
+) {
+  const rows = await db
+    .select()
+    .from(schema.waybackProductData)
+    .where(
+      and(
+        eq(schema.waybackProductData.storeDomain, storeDomain),
+        eq(schema.waybackProductData.handle, handle),
+      ),
+    )
+    .orderBy(desc(schema.waybackProductData.capturedAt));
+
+  if (rows.length === 0) return null;
+
+  const latest = rows[0];
+
+  let images: string[] = [];
+  try { images = JSON.parse(latest.imagesJson ?? "[]"); } catch { /* ignore */ }
+
+  let variants: Array<Record<string, unknown>> = [];
+  try { variants = JSON.parse(latest.variantsJson ?? "[]"); } catch { /* ignore */ }
+
+  return {
+    handle: latest.handle,
+    title: latest.title ?? latest.handle,
+    vendor: latest.vendor,
+    productType: latest.productType,
+    rawPrice: latest.rawPrice,
+    capturedAt: latest.capturedAt,
+    images,
+    variants,
+    timeline: rows.map((r) => ({
+      id: r.id,
+      capturedAt: r.capturedAt,
+      title: r.title,
+      rawPrice: r.rawPrice,
+      extractionStrategy: r.extractionStrategy,
+    })),
+  };
 }

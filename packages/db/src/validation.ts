@@ -51,6 +51,7 @@ export const productsQuerySchema = z.object({
   search: z.string().optional(),
   stock: z.enum(["all", "in", "out"]).optional(),
   sort: z.enum(["name", "price_asc", "price_desc", "recent"]).optional(),
+  type: z.string().optional(),
   offset: z.coerce.number().int().min(0).optional(),
   limit: z.coerce.number().int().min(1).max(200).optional(),
 });
@@ -69,4 +70,11 @@ export const eventsQuerySchema = z.object({
 
 export const archiveImportSchema = z.object({
   store_domain: z.string().min(1).optional(), // optional since storeId is in URL
+});
+
+export const archivedProductsQuerySchema = z.object({
+  search: z.string().optional(),
+  sort: z.enum(["name", "recent"]).optional(),
+  offset: z.coerce.number().int().min(0).optional(),
+  limit: z.coerce.number().int().min(1).max(200).optional(),
 });
