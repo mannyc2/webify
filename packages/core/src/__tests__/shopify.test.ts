@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { fetchProducts, type ShopifyProduct } from "../shopify";
+import { fetchProducts, type ShopifyProduct } from "../clients/shopify";
 
 // ---------------------------------------------------------------------------
 // Helpers
