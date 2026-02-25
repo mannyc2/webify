@@ -38,6 +38,7 @@
     "@types/react-dom": "^19",
     "@vitejs/plugin-rsc": "^0.5.20",
     "eslint": "^9",
+    "next": "16.1.6",
     "tailwindcss": "^4",
     "typescript": "catalog:",
     "vite": "^7.0.0",
