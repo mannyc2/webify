@@ -9,14 +9,14 @@ export async function GET(
   {
     params,
   }: {
-    params: Promise<{
+    params: {
       productId: string;
       variantId: string;
-    }>;
+    };
   },
 ) {
   try {
-    const { productId, variantId } = await params;
+    const { productId, variantId } = params;
     const db = getDb(getEnv());
 
     // Verify variant exists and belongs to the product

@@ -7,10 +7,10 @@ import { markReadSchema } from "@/lib/api/validation";
 
 export async function PATCH(
   request: Request,
-  { params }: { params: Promise<{ eventId: string }> },
+  { params }: { params: { eventId: string } },
 ) {
   try {
-    const { eventId } = await params;
+    const { eventId } = params;
     const db = getDb(getEnv());
 
     // Verify event exists

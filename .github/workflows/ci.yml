@@ -22,6 +22,8 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
+      - name: Mask workers subdomain
+        run: echo "::add-mask::${{ secrets.WORKERS_SUBDOMAIN }}"
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile

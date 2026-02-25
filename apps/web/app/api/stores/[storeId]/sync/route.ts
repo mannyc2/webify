@@ -6,10 +6,10 @@ import { handleApiError, ApiError } from "@/lib/api/errors";
 
 export async function POST(
   _request: Request,
-  { params }: { params: Promise<{ storeId: string }> },
+  { params }: { params: { storeId: string } },
 ) {
   try {
-    const { storeId } = await params;
+    const { storeId } = params;
     const env = getEnv();
     const db = getDb(env);
 

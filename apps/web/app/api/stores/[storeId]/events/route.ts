@@ -7,10 +7,10 @@ import { eventsQuerySchema } from "@/lib/api/validation";
 
 export async function GET(
   request: Request,
-  { params }: { params: Promise<{ storeId: string }> },
+  { params }: { params: { storeId: string } },
 ) {
   try {
-    const { storeId } = await params;
+    const { storeId } = params;
     const db = getDb(getEnv());
 
     const store = await getStoreById(db, storeId);

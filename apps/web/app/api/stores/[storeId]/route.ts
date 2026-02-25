@@ -7,10 +7,10 @@ import { handleApiError, ApiError } from "@/lib/api/errors";
 
 export async function GET(
   _request: Request,
-  { params }: { params: Promise<{ storeId: string }> },
+  { params }: { params: { storeId: string } },
 ) {
   try {
-    const { storeId } = await params;
+    const { storeId } = params;
     const db = getDb(getEnv());
     const store = await getStoreById(db, storeId);
 
@@ -26,10 +26,10 @@ export async function GET(
 
 export async function DELETE(
   _request: Request,
-  { params }: { params: Promise<{ storeId: string }> },
+  { params }: { params: { storeId: string } },
 ) {
   try {
-    const { storeId } = await params;
+    const { storeId } = params;
     const db = getDb(getEnv());
 
     const store = await getStoreById(db, storeId);

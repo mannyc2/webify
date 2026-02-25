@@ -6,10 +6,10 @@ import { handleApiError, ApiError } from "@/lib/api/errors";
 
 export async function GET(
   _request: Request,
-  { params }: { params: Promise<{ storeId: string; productId: string }> },
+  { params }: { params: { storeId: string; productId: string } },
 ) {
   try {
-    const { storeId, productId } = await params;
+    const { storeId, productId } = params;
     const db = getDb(getEnv());
 
     const store = await getStoreById(db, storeId);
