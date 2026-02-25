@@ -192,6 +192,27 @@ export const archivedProductDetailSchema = z.object({
 })
 
 // ---------------------------------------------------------------------------
+// Videos
+// ---------------------------------------------------------------------------
+
+const videoSchema = z.object({
+  id: z.number(),
+  productId: z.number(),
+  src: z.string(),
+  format: z.enum(["mp4", "webm", "m3u8", "youtube", "vimeo", "unknown"]),
+  height: z.number().nullable(),
+  position: z.number(),
+  alt: z.string().nullable(),
+  firstSeenAt: z.string(),
+  lastSeenAt: z.string(),
+  isRemoved: z.boolean(),
+})
+
+export const videosResponseSchema = z.object({
+  data: z.array(videoSchema),
+})
+
+// ---------------------------------------------------------------------------
 // Queue Status (admin)
 // ---------------------------------------------------------------------------
 

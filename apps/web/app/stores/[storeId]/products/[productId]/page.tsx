@@ -15,11 +15,13 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useProduct } from "@/hooks/use-product"
 import { useArchivedImages } from "@/hooks/use-archived-images"
+import { useProductVideos } from "@/hooks/use-product-videos"
 
 export default function ProductDetailPage() {
   const { storeId, productId } = useParams<{ storeId: string; productId: string }>()
   const { data: product, isPending, error } = useProduct(storeId, productId)
   const { images: archivedImages } = useArchivedImages(storeId, product?.id)
+  const { videos } = useProductVideos(product?.id)
   const [selectedVariantId, setSelectedVariantId] = useState<number | null>(null)
 
   if (isPending) {
@@ -54,6 +56,10 @@ export default function ProductDetailPage() {
     .filter((img) => !img.isRemoved)
     .sort((a, b) => a.position - b.position)
 
+  const activeVideos = videos
+    .filter((v) => !v.isRemoved)
+    .sort((a, b) => a.position - b.position)
+
   const variants = product.variants ?? []
 
   // Auto-select first variant if none selected
@@ -73,7 +79,7 @@ export default function ProductDetailPage() {
 
       {/* Two-column: gallery + info */}
       <div className="grid gap-8 lg:grid-cols-2">
-        <ImageGallery images={activeImages} productTitle={product.title} />
+        <ImageGallery images={activeImages} videos={activeVideos} productTitle={product.title} />
         <ProductInfo
           product={product}
           variants={variants}

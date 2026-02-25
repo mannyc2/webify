@@ -32,6 +32,10 @@ export const queryKeys = {
     detail: (storeId: string, handle: string) =>
       ["archivedProducts", "detail", storeId, handle] as const,
   },
+  videos: {
+    byProduct: (productId: number) =>
+      ["videos", productId] as const,
+  },
   admin: {
     queueStatus: ["admin", "queue-status"] as const,
   },
