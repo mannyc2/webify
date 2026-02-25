@@ -96,6 +96,9 @@ export async function POST(request: Request) {
       syncStatus: "pending",
     });
 
+    // Immediately enqueue first sync so the store doesn't sit at "pending"
+    await env.SYNC_QUEUE.send({ domain });
+
     const store = await db.query.stores.findFirst({
       where: { domain },
     });
