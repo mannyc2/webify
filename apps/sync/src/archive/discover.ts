@@ -1,9 +1,10 @@
 import { eq } from "drizzle-orm";
 import type { Database } from "@webify/db";
 import { waybackSnapshots, archiveImportJobs, queueJobs } from "@webify/db";
-import { queryCdx, deduplicateByDigestDay } from "@webify/core";
+import { queryCdx, deduplicateByDigestDay, filterNewSnapshots } from "@webify/core/clients/cdx";
+import { batchExecute, chunkByParams, type WriteOp } from "@webify/db/batch";
 import { createLogger } from "@webify/db";
-import type { ScrapeJobMessage } from "./types";
+import type { ScrapeJobMessage } from "../types";
 
 const log = createLogger("archive-discover");
 const BATCH_SIZE = 50;
@@ -57,29 +58,25 @@ export async function handleArchiveDiscover(
       where: { storeDomain: domain },
     });
     const existingKeys = new Set(existingSnaps.map(s => `${s.digest}:${s.timestamp}`));
-    const newSnapshots = deduped.filter(s => !existingKeys.has(`${s.digest}:${s.timestamp}`));
+    const newSnapshots = filterNewSnapshots(deduped, existingKeys);
 
-    // Insert new snapshots in chunks (D1 100-param limit)
-    // 11 params per row: storeDomain, url, handle, timestamp, digest, statusCode, mimeType, length, fetchStatus, fetchedAt, fetchError
-    const PARAMS_PER_ROW = 11;
-    const CHUNK_SIZE = Math.floor(100 / PARAMS_PER_ROW);
-
-    for (let i = 0; i < newSnapshots.length; i += CHUNK_SIZE) {
-      const chunk = newSnapshots.slice(i, i + CHUNK_SIZE);
-      await db.insert(waybackSnapshots).values(
-        chunk.map(snap => ({
-          storeDomain: domain,
-          url: snap.url,
-          handle: snap.handle,
-          timestamp: snap.timestamp,
-          digest: snap.digest,
-          statusCode: snap.statusCode,
-          mimeType: snap.mimeType,
-          length: snap.length,
-          fetchStatus: "pending" as const,
-        })),
-      );
+    // Insert new snapshots in chunks (D1 100-param limit, 11 params per row)
+    const rows = newSnapshots.map(snap => ({
+      storeDomain: domain,
+      url: snap.url,
+      handle: snap.handle,
+      timestamp: snap.timestamp,
+      digest: snap.digest,
+      statusCode: snap.statusCode,
+      mimeType: snap.mimeType,
+      length: snap.length,
+      fetchStatus: "pending" as const,
+    }));
+    const writes: WriteOp[] = [];
+    for (const chunk of chunkByParams(rows, 11)) {
+      writes.push(db.insert(waybackSnapshots).values(chunk));
     }
+    await batchExecute(db, writes);
 
     // Re-fetch the inserted snapshots to get their IDs
     const pendingSnaps = await db.query.waybackSnapshots.findMany({

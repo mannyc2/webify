@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import type { Database } from "@webify/db";
 import { getStaleProducts, queueJobs } from "@webify/db";
 import { createLogger } from "@webify/db";
-import type { ScrapeJobMessage } from "./types";
+import type { ScrapeJobMessage } from "../types";
 
 const log = createLogger("scrape-stale");
 

@@ -5,11 +5,11 @@ import { eq, lt, inArray, and } from "drizzle-orm";
 import * as schema from "@webify/db";
 import { queueJobs, createLogger } from "@webify/db";
 import type { Env, SyncJobMessage, ScrapeJobMessage } from "./types";
-import { syncStore } from "./sync";
-import { handleScrapeStale } from "./scrape-stale";
-import { handleScrapeProduct } from "./scrape-product";
-import { handleArchiveDiscover } from "./archive-discover";
-import { handleArchiveBatch } from "./archive-batch";
+import { syncStore } from "./sync/handler";
+import { handleScrapeStale } from "./scrape/stale";
+import { handleScrapeProduct } from "./scrape/product";
+import { handleArchiveDiscover } from "./archive/discover";
+import { handleArchiveBatch } from "./archive/batch";
 
 const log = createLogger("sync");
 

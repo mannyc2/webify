@@ -5,7 +5,7 @@ import {
   detectPriceChanges,
   detectStockChanges,
   detectImageChanges,
-} from "../diff";
+} from "../../diff";
 
 // ---------------------------------------------------------------------------
 // calculateMagnitude

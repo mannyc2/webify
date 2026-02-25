@@ -2,10 +2,17 @@
   "name": "@webify/core",
   "version": "0.1.0",
   "type": "module",
-  "main": "./src/index.ts",
-  "types": "./src/index.ts",
   "exports": {
-    ".": "./src/index.ts"
+    "./clients/shopify": "./src/clients/shopify.ts",
+    "./clients/cdx": "./src/clients/cdx.ts",
+    "./parsing": "./src/parsing/html-parser.ts",
+    "./parsing/normalize": "./src/parsing/normalize.ts",
+    "./parsing/video": "./src/parsing/video.ts",
+    "./parsing/script-extract": "./src/parsing/script-extract.ts",
+    "./parsing/strategies/*": "./src/parsing/strategies/*.ts",
+    "./parsing/types": "./src/parsing/types.ts",
+    "./diff": "./src/diff/index.ts",
+    "./wayback-types": "./src/wayback-types.ts"
   },
   "scripts": {
     "test": "bun test",
