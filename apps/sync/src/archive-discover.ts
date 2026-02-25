@@ -3,7 +3,7 @@ import type { Database } from "@webify/db";
 import { waybackSnapshots, archiveImportJobs } from "@webify/db";
 import { queryCdx, deduplicateByDigestDay } from "@webify/core";
 import { createLogger } from "@webify/db";
-import type { ScrapeJobMessage, ArchiveBatchSnapshot } from "./types";
+import type { ScrapeJobMessage } from "./types";
 
 const log = createLogger("archive-discover");
 const BATCH_SIZE = 50;

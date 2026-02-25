@@ -5,7 +5,6 @@ import type {
   WaybackProductData,
   WaybackVideoData,
   WaybackVariantData,
-  ExtractionStrategy,
 } from "./wayback-types";
 
 // ---------------------------------------------------------------------------
