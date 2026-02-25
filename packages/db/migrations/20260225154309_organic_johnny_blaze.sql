@@ -1,0 +1,1 @@
+ALTER TABLE `products` ADD `cached_image_url` text;
