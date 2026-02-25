@@ -22,10 +22,15 @@ import {
   type ChangeEventData,
 } from "@webify/core";
 
+export interface SyncResult {
+  productCount: number;
+  changeCount: number;
+}
+
 export async function syncStore(
   db: Database,
   domain: string,
-): Promise<void> {
+): Promise<SyncResult> {
   try {
     const shopifyProducts = await fetchProducts(domain);
 
@@ -180,6 +185,8 @@ export async function syncStore(
         cachedProductCount: shopifyProducts.length,
       })
       .where(eq(stores.domain, domain));
+
+    return { productCount: shopifyProducts.length, changeCount: changes.length };
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Unknown sync error";

@@ -4,6 +4,10 @@
   "compatibility_date": "2025-02-24",
   "compatibility_flags": ["nodejs_compat"],
   "main": "./worker/index.ts",
+  "upload_source_maps": true,
+  "observability": {
+    "enabled": true
+  },
   "assets": {
     "not_found_handling": "none"
   },

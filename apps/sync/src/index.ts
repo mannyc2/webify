@@ -2,8 +2,11 @@
 
 import { drizzle } from "drizzle-orm/d1";
 import * as schema from "@webify/db";
+import { createLogger } from "@webify/db";
 import type { Env, SyncJobMessage } from "./types";
 import { syncStore } from "./sync";
+
+const log = createLogger("sync");
 
 export default {
   async scheduled(
@@ -17,6 +20,7 @@ export default {
     // Query all stores, skip those not due for sync
     const allStores = await db.query.stores.findMany();
 
+    let enqueued = 0;
     for (const store of allStores) {
       const lastFetched = store.lastFetchedAt
         ? new Date(store.lastFetchedAt).getTime()
@@ -29,8 +33,11 @@ export default {
             domain: store.domain,
           } satisfies SyncJobMessage),
         );
+        enqueued++;
       }
     }
+
+    log.info("cron complete", { totalStores: allStores.length, enqueued });
   },
 
   async queue(
@@ -40,14 +47,24 @@ export default {
     const db = drizzle(env.DB, { schema, relations: schema.relations });
 
     for (const message of batch.messages) {
+      const domain = message.body.domain;
       try {
-        await syncStore(db, message.body.domain);
+        const start = Date.now();
+        const result = await syncStore(db, domain);
+        const durationMs = Date.now() - start;
+        log.info("sync complete", {
+          domain,
+          products: result.productCount,
+          changes: result.changeCount,
+          durationMs,
+        });
         message.ack();
       } catch (error) {
-        console.error(
-          `Sync failed for store ${message.body.domain}:`,
-          error,
-        );
+        log.error("sync failed", {
+          domain,
+          error: error instanceof Error ? error.message : String(error),
+          attempts: message.attempts,
+        });
         message.retry();
       }
     }
