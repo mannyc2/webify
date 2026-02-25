@@ -22,6 +22,21 @@ import {
   type ChangeEventData,
 } from "@webify/core";
 
+// D1 limits bound parameters to 100 per query. Chunk batch inserts to stay safe.
+const D1_MAX_PARAMS = 100;
+
+async function chunkedInsert<T extends Record<string, unknown>>(
+  db: Database,
+  table: Parameters<Database["insert"]>[0],
+  rows: T[],
+  paramsPerRow: number,
+): Promise<void> {
+  const chunkSize = Math.floor(D1_MAX_PARAMS / paramsPerRow);
+  for (let i = 0; i < rows.length; i += chunkSize) {
+    await db.insert(table).values(rows.slice(i, i + chunkSize));
+  }
+}
+
 export interface SyncResult {
   productCount: number;
   changeCount: number;
@@ -155,9 +170,11 @@ export async function syncStore(
       }
     }
 
-    // Batch insert change events
+    // Insert change events (13 bound params per row)
     if (changes.length > 0) {
-      await db.insert(changeEvents).values(
+      await chunkedInsert(
+        db,
+        changeEvents,
         changes.map((c) => ({
           id: crypto.randomUUID(),
           storeDomain: domain,
@@ -172,6 +189,7 @@ export async function syncStore(
           isRead: false,
           productShopifyId: c.productShopifyId,
         })),
+        13,
       );
     }
 
@@ -228,9 +246,11 @@ async function insertNewProduct(
     titleSearchKey: shopify.title.toLowerCase(),
   });
 
-  // Batch insert variants
+  // Insert variants (8 bound params per row)
   if (shopify.variants.length > 0) {
-    await db.insert(variants).values(
+    await chunkedInsert(
+      db,
+      variants,
       shopify.variants.map((v) => ({
         id: v.id,
         productId: shopify.id,
@@ -241,12 +261,15 @@ async function insertNewProduct(
         available: v.available,
         position: v.position,
       })),
+      8,
     );
   }
 
-  // Batch insert images
+  // Insert images (6 bound params per row)
   if (shopify.images.length > 0) {
-    await db.insert(productImages).values(
+    await chunkedInsert(
+      db,
+      productImages,
       shopify.images.map((img, i) => ({
         productId: shopify.id,
         url: img.src,
@@ -255,6 +278,7 @@ async function insertNewProduct(
         lastSeenAt: now,
         isRemoved: false,
       })),
+      6,
     );
   }
 }
