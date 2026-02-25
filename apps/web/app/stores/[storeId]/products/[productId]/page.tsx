@@ -1,5 +1,6 @@
 "use client"
 
+import { useParams } from "next/navigation"
 import { ImageIcon } from "lucide-react"
 import type { Variant } from "@webify/db"
 import { Header } from "@/components/layout/header"
@@ -10,12 +11,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useProduct } from "@/hooks/use-product"
 
-export default function ProductDetailPage({
-  params,
-}: {
-  params: { storeId: string; productId: string }
-}) {
-  const { storeId, productId } = params
+export default function ProductDetailPage() {
+  const { storeId, productId } = useParams<{ storeId: string; productId: string }>()
   const { data: product, isPending, error } = useProduct(storeId, productId)
 
   if (isPending) {

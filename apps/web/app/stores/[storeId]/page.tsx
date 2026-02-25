@@ -1,5 +1,6 @@
 "use client"
 
+import { useParams } from "next/navigation"
 import { RefreshCwIcon } from "lucide-react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import type { SyncStatus as SyncStatusType } from "@webify/db"
@@ -10,12 +11,8 @@ import { Button } from "@/components/ui/button"
 import { queryKeys } from "@/lib/query-keys"
 import { storeResponseSchema } from "@/lib/api/schemas"
 
-export default function StoreDetailPage({
-  params,
-}: {
-  params: { storeId: string }
-}) {
-  const { storeId } = params
+export default function StoreDetailPage() {
+  const { storeId } = useParams<{ storeId: string }>()
   const queryClient = useQueryClient()
 
   const { data: store } = useQuery({
