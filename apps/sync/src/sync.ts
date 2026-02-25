@@ -1,6 +1,7 @@
 // Per-store sync orchestration — ported from watchify/Services/StoreService+Sync.swift
 
 import { eq } from "drizzle-orm";
+import type { BatchItem } from "drizzle-orm/batch";
 import type { Database } from "@webify/db";
 import {
   stores,
@@ -13,6 +14,7 @@ import {
   ChangeType,
   ChangeMagnitude,
 } from "@webify/db";
+import type { Variant, ProductImage } from "@webify/db";
 import {
   fetchProducts,
   type ShopifyProduct,
@@ -22,18 +24,45 @@ import {
   type ChangeEventData,
 } from "@webify/core";
 
-// D1 limits bound parameters to 100 per query. Chunk batch inserts to stay safe.
+// D1 limits bound parameters to 100 per statement.
 const D1_MAX_PARAMS = 100;
 
-async function chunkedInsert<T extends Record<string, unknown>>(
+// Max statements per db.batch() call.
+const BATCH_CHUNK_SIZE = 100;
+
+type WriteOp = BatchItem<"sqlite">;
+
+/**
+ * Collect chunked insert queries (respecting D1's 100-param-per-statement limit).
+ * Pushes one INSERT statement per chunk into the writes array.
+ */
+function collectInsertChunks<T extends Record<string, unknown>>(
+  writes: WriteOp[],
   db: Database,
   table: Parameters<Database["insert"]>[0],
   rows: T[],
   paramsPerRow: number,
-): Promise<void> {
+): void {
+  if (rows.length === 0) return;
   const chunkSize = Math.floor(D1_MAX_PARAMS / paramsPerRow);
   for (let i = 0; i < rows.length; i += chunkSize) {
-    await db.insert(table).values(rows.slice(i, i + chunkSize));
+    writes.push(db.insert(table).values(rows.slice(i, i + chunkSize)));
+  }
+}
+
+/**
+ * Execute an array of prepared queries in batched chunks.
+ * Each chunk is sent as a single D1 subrequest via db.batch().
+ */
+async function batchExecute(db: Database, writes: WriteOp[]): Promise<void> {
+  if (writes.length === 0) return;
+  for (let i = 0; i < writes.length; i += BATCH_CHUNK_SIZE) {
+    const chunk = writes.slice(i, i + BATCH_CHUNK_SIZE);
+    if (chunk.length === 1) {
+      await chunk[0];
+    } else {
+      await db.batch(chunk as [WriteOp, ...WriteOp[]]);
+    }
   }
 }
 
@@ -66,12 +95,16 @@ export async function syncStore(
     const changes: ChangeEventData[] = [];
     const now = new Date().toISOString();
 
+    // Collect ALL write operations — executed as batched D1 calls at the end.
+    // This reduces ~5,000+ individual subrequests to ~50 batched calls.
+    const writes: WriteOp[] = [];
+
     for (const shopifyProduct of shopifyProducts) {
       const existing = existingById.get(shopifyProduct.id);
 
       if (!existing) {
-        // New product — insert product + variants + images
-        await insertNewProduct(db, domain, shopifyProduct, now);
+        // New product — collect insert queries
+        collectNewProductWrites(writes, db, domain, shopifyProduct, now);
         changes.push({
           changeType: ChangeType.newProduct,
           magnitude: ChangeMagnitude.medium,
@@ -83,19 +116,21 @@ export async function syncStore(
           productShopifyId: shopifyProduct.id,
         });
       } else {
-        // Existing product — detect changes, then update
+        // Existing product — detect changes, collect update queries
         if (existing.isRemoved) {
-          await db
-            .update(products)
-            .set({ isRemoved: false })
-            .where(eq(products.id, existing.id));
+          writes.push(
+            db
+              .update(products)
+              .set({ isRemoved: false })
+              .where(eq(products.id, existing.id)),
+          );
         }
 
         const existingVariantsById = new Map(
           existing.variants.map((v) => [v.id, v]),
         );
 
-        // Detect variant-level changes
+        // Detect variant-level changes + collect snapshot inserts
         for (const fetchedVariant of shopifyProduct.variants) {
           const existingVariant = existingVariantsById.get(fetchedVariant.id);
           if (!existingVariant) continue;
@@ -116,46 +151,54 @@ export async function syncStore(
           );
           if (stockChange) changes.push(stockChange);
 
-          // Create snapshot if price or availability changed
+          // Snapshot if price or availability changed
           if (
             existingVariant.price !== fetchedVariant.price ||
             existingVariant.compareAtPrice !== fetchedVariant.compare_at_price ||
             existingVariant.available !== fetchedVariant.available
           ) {
-            await db.insert(variantSnapshots).values({
-              variantId: existingVariant.id,
-              capturedAt: now,
-              price: existingVariant.price,
-              compareAtPrice: existingVariant.compareAtPrice,
-              available: existingVariant.available,
-            });
+            writes.push(
+              db.insert(variantSnapshots).values({
+                variantId: existingVariant.id,
+                capturedAt: now,
+                price: existingVariant.price,
+                compareAtPrice: existingVariant.compareAtPrice,
+                available: existingVariant.available,
+              }),
+            );
           }
         }
 
         // Detect image changes
         const activeImages = existing.images.filter((img) => !img.isRemoved);
         const imageChange = detectImageChanges(
-          {
-            id: existing.id,
-            title: existing.title,
-            images: activeImages,
-          },
+          { id: existing.id, title: existing.title, images: activeImages },
           shopifyProduct,
         );
         if (imageChange) changes.push(imageChange);
 
-        // Update product fields + images
-        await updateExistingProduct(db, existing.id, shopifyProduct, now);
+        // Collect product + variant + image update queries (no extra DB reads)
+        collectUpdateWrites(
+          writes,
+          db,
+          existing.id,
+          existing.variants,
+          existing.images,
+          shopifyProduct,
+          now,
+        );
       }
     }
 
     // Mark products removed: active products not in fetched set
     for (const existing of existingProducts) {
       if (!fetchedIdSet.has(existing.id) && !existing.isRemoved) {
-        await db
-          .update(products)
-          .set({ isRemoved: true })
-          .where(eq(products.id, existing.id));
+        writes.push(
+          db
+            .update(products)
+            .set({ isRemoved: true })
+            .where(eq(products.id, existing.id)),
+        );
 
         changes.push({
           changeType: ChangeType.productRemoved,
@@ -172,7 +215,8 @@ export async function syncStore(
 
     // Insert change events (13 bound params per row)
     if (changes.length > 0) {
-      await chunkedInsert(
+      collectInsertChunks(
+        writes,
         db,
         changeEvents,
         changes.map((c) => ({
@@ -194,15 +238,20 @@ export async function syncStore(
     }
 
     // Update store metadata
-    await db
-      .update(stores)
-      .set({
-        lastFetchedAt: now,
-        syncStatus: SyncStatus.healthy,
-        lastError: null,
-        cachedProductCount: shopifyProducts.length,
-      })
-      .where(eq(stores.domain, domain));
+    writes.push(
+      db
+        .update(stores)
+        .set({
+          lastFetchedAt: now,
+          syncStatus: SyncStatus.healthy,
+          lastError: null,
+          cachedProductCount: shopifyProducts.length,
+        })
+        .where(eq(stores.domain, domain)),
+    );
+
+    // Execute ALL writes in batched D1 calls
+    await batchExecute(db, writes);
 
     return { productCount: shopifyProducts.length, changeCount: changes.length };
   } catch (error) {
@@ -212,43 +261,48 @@ export async function syncStore(
       .update(stores)
       .set({
         syncStatus: SyncStatus.failing,
-        lastError: message,
+        lastError: message.slice(0, 500),
       })
       .where(eq(stores.domain, domain));
     throw error;
   }
 }
 
-async function insertNewProduct(
+/** Collect insert queries for a new product (product + variants + images). */
+function collectNewProductWrites(
+  writes: WriteOp[],
   db: Database,
   domain: string,
   shopify: ShopifyProduct,
   now: string,
-): Promise<void> {
+): void {
   const firstVariant = shopify.variants[0];
   const cachedPrice = firstVariant?.price ?? "0";
   const cachedIsAvailable = shopify.variants.some((v) => v.available);
 
-  await db.insert(products).values({
-    id: shopify.id,
-    storeDomain: domain,
-    handle: shopify.handle,
-    title: shopify.title,
-    vendor: shopify.vendor,
-    productType: shopify.product_type,
-    firstSeenAt: now,
-    isRemoved: false,
-    shopifyCreatedAt: shopify.created_at,
-    shopifyPublishedAt: shopify.published_at,
-    shopifyUpdatedAt: shopify.updated_at,
-    cachedPrice,
-    cachedIsAvailable,
-    titleSearchKey: shopify.title.toLowerCase(),
-  });
+  writes.push(
+    db.insert(products).values({
+      id: shopify.id,
+      storeDomain: domain,
+      handle: shopify.handle,
+      title: shopify.title,
+      vendor: shopify.vendor,
+      productType: shopify.product_type,
+      firstSeenAt: now,
+      isRemoved: false,
+      shopifyCreatedAt: shopify.created_at,
+      shopifyPublishedAt: shopify.published_at,
+      shopifyUpdatedAt: shopify.updated_at,
+      cachedPrice,
+      cachedIsAvailable,
+      titleSearchKey: shopify.title.toLowerCase(),
+    }),
+  );
 
   // Insert variants (8 bound params per row)
   if (shopify.variants.length > 0) {
-    await chunkedInsert(
+    collectInsertChunks(
+      writes,
       db,
       variants,
       shopify.variants.map((v) => ({
@@ -267,7 +321,8 @@ async function insertNewProduct(
 
   // Insert images (6 bound params per row)
   if (shopify.images.length > 0) {
-    await chunkedInsert(
+    collectInsertChunks(
+      writes,
       db,
       productImages,
       shopify.images.map((img, i) => ({
@@ -283,113 +338,123 @@ async function insertNewProduct(
   }
 }
 
-async function updateExistingProduct(
+/**
+ * Collect update/insert/delete queries for an existing product.
+ * Uses the already-loaded variants and images — no extra DB reads needed.
+ */
+function collectUpdateWrites(
+  writes: WriteOp[],
   db: Database,
   productId: number,
+  existingVariants: Variant[],
+  existingImages: ProductImage[],
   shopify: ShopifyProduct,
   now: string,
-): Promise<void> {
+): void {
   const cachedPrice = shopify.variants[0]?.price ?? "0";
   const cachedIsAvailable = shopify.variants.some((v) => v.available);
 
-  await db
-    .update(products)
-    .set({
-      handle: shopify.handle,
-      title: shopify.title,
-      vendor: shopify.vendor,
-      productType: shopify.product_type,
-      shopifyUpdatedAt: shopify.updated_at,
-      cachedPrice,
-      cachedIsAvailable,
-      titleSearchKey: shopify.title.toLowerCase(),
-    })
-    .where(eq(products.id, productId));
+  // Update product fields
+  writes.push(
+    db
+      .update(products)
+      .set({
+        handle: shopify.handle,
+        title: shopify.title,
+        vendor: shopify.vendor,
+        productType: shopify.product_type,
+        shopifyUpdatedAt: shopify.updated_at,
+        cachedPrice,
+        cachedIsAvailable,
+        titleSearchKey: shopify.title.toLowerCase(),
+      })
+      .where(eq(products.id, productId)),
+  );
 
   // --- Variants ---
-  const existingVariants = await db.query.variants.findMany({
-    where: { productId },
-  });
   const existingVariantIds = new Set(existingVariants.map((v) => v.id));
   const fetchedVariantIds = new Set(shopify.variants.map((v) => v.id));
 
   for (const v of shopify.variants) {
     if (existingVariantIds.has(v.id)) {
-      await db
-        .update(variants)
-        .set({
+      writes.push(
+        db
+          .update(variants)
+          .set({
+            title: v.title,
+            sku: v.sku,
+            price: v.price,
+            compareAtPrice: v.compare_at_price,
+            available: v.available,
+            position: v.position,
+          })
+          .where(eq(variants.id, v.id)),
+      );
+    } else {
+      writes.push(
+        db.insert(variants).values({
+          id: v.id,
+          productId,
           title: v.title,
           sku: v.sku,
           price: v.price,
           compareAtPrice: v.compare_at_price,
           available: v.available,
           position: v.position,
-        })
-        .where(eq(variants.id, v.id));
-    } else {
-      await db.insert(variants).values({
-        id: v.id,
-        productId,
-        title: v.title,
-        sku: v.sku,
-        price: v.price,
-        compareAtPrice: v.compare_at_price,
-        available: v.available,
-        position: v.position,
-      });
+        }),
+      );
     }
   }
 
   // Delete variants no longer in Shopify feed
-  for (const existing of existingVariants) {
-    if (!fetchedVariantIds.has(existing.id)) {
-      await db.delete(variants).where(eq(variants.id, existing.id));
+  for (const ev of existingVariants) {
+    if (!fetchedVariantIds.has(ev.id)) {
+      writes.push(db.delete(variants).where(eq(variants.id, ev.id)));
     }
   }
 
   // --- Images (soft-delete model) ---
-  const existingImages = await db.query.productImages.findMany({
-    where: { productId },
-  });
-  const existingUrlMap = new Map(
-    existingImages.map((img) => [img.url, img]),
-  );
+  const existingUrlMap = new Map(existingImages.map((img) => [img.url, img]));
   const fetchedUrls = new Set(shopify.images.map((img) => img.src));
 
-  // Upsert images from Shopify
   for (let i = 0; i < shopify.images.length; i++) {
     const url = shopify.images[i].src;
-    const existing = existingUrlMap.get(url);
-    if (existing) {
-      // Update last seen + un-remove if needed
-      await db
-        .update(productImages)
-        .set({
-          lastSeenAt: now,
-          position: i,
-          isRemoved: false,
-          removedAt: null,
-        })
-        .where(eq(productImages.id, existing.id));
+    const existingImg = existingUrlMap.get(url);
+    if (existingImg) {
+      writes.push(
+        db
+          .update(productImages)
+          .set({
+            lastSeenAt: now,
+            position: i,
+            isRemoved: false,
+            removedAt: null,
+          })
+          .where(eq(productImages.id, existingImg.id)),
+      );
     } else {
-      await db.insert(productImages).values({
-        productId,
-        url,
-        position: i,
-        firstSeenAt: now,
-        lastSeenAt: now,
-        isRemoved: false,
-      });
+      writes.push(
+        db.insert(productImages).values({
+          productId,
+          url,
+          position: i,
+          firstSeenAt: now,
+          lastSeenAt: now,
+          isRemoved: false,
+        }),
+      );
     }
   }
 
   // Soft-delete images no longer in Shopify feed
-  for (const existing of existingImages) {
-    if (!fetchedUrls.has(existing.url) && !existing.isRemoved) {
-      await db
-        .update(productImages)
-        .set({ isRemoved: true, removedAt: now })
-        .where(eq(productImages.id, existing.id));
+  for (const existingImg of existingImages) {
+    if (!fetchedUrls.has(existingImg.url) && !existingImg.isRemoved) {
+      writes.push(
+        db
+          .update(productImages)
+          .set({ isRemoved: true, removedAt: now })
+          .where(eq(productImages.id, existingImg.id)),
+      );
     }
   }
 }
