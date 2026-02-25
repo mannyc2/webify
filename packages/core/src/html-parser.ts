@@ -362,6 +362,7 @@ function tryProductVariable(scripts: ScriptTag[]): ParseResult | null {
     /var\s+product\s*=\s*\{/,
     /let\s+product\s*=\s*\{/,
     /const\s+product\s*=\s*\{/,
+    /\w+\.product\s*=\s*\{/,
     /product\s*:\s*\{/,
   ];
 
@@ -609,8 +610,19 @@ function normalizeJsonLdProduct(ld: any): WaybackProductData {
 // ---------------------------------------------------------------------------
 
 /**
+ * A result is "useful" if it has at least a title, images, or videos.
+ * Strategies like `var meta` sometimes match with empty product data —
+ * skip those so richer results from later strategies can win.
+ */
+function hasMinimalData(result: ParseResult): boolean {
+  const p = result.product;
+  return p.title !== null || p.images.length > 0 || p.videos.length > 0;
+}
+
+/**
  * Parse a Shopify product page HTML and extract product data.
- * Tries 5 strategies in order, returns first successful result.
+ * Tries 5 strategies in order, returns first result with meaningful data.
+ * Falls back to any match if no strategy yields useful data.
  */
 export async function parseProductPage(
   html: string,
@@ -619,23 +631,24 @@ export async function parseProductPage(
 
   // Strategy 1: data-product-json attribute
   const s1 = tryDataProductJson(scripts);
-  if (s1) return s1;
+  if (s1 && hasMinimalData(s1)) return s1;
 
   // Strategy 2: var meta = { ... }
   const s2 = tryMetaVariable(scripts);
-  if (s2) return s2;
+  if (s2 && hasMinimalData(s2)) return s2;
 
-  // Strategy 3: var product = { ... } or product: { ... }
+  // Strategy 3: var product = { ... }, obj.product = { ... }, product: { ... }
   const s3 = tryProductVariable(scripts);
-  if (s3) return s3;
+  if (s3 && hasMinimalData(s3)) return s3;
 
   // Strategy 4: ShopifyAnalytics.meta.product patterns
   const s4 = tryGenericAssignment(scripts);
-  if (s4) return s4;
+  if (s4 && hasMinimalData(s4)) return s4;
 
   // Strategy 5: JSON-LD
   const s5 = tryJsonLd(scripts);
-  if (s5) return s5;
+  if (s5 && hasMinimalData(s5)) return s5;
 
-  return null;
+  // Fall back to any match (even without title/images/videos)
+  return s1 ?? s2 ?? s3 ?? s4 ?? s5 ?? null;
 }
