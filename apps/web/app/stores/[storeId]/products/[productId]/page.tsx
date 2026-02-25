@@ -1,30 +1,41 @@
 "use client"
 
+import { useState } from "react"
 import { useParams } from "next/navigation"
-import { ImageIcon } from "lucide-react"
 import type { Variant } from "@webify/db"
 import { Header } from "@/components/layout/header"
-import { StockBadge } from "@/components/shared/stock-badge"
-import { VariantRow } from "@/components/product/variant-row"
+import { ImageGallery } from "@/components/product/image-gallery"
+import { ProductInfo } from "@/components/product/product-info"
+import { VariantTable } from "@/components/product/variant-table"
 import { PriceHistoryChart } from "@/components/product/price-history-chart"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useProduct } from "@/hooks/use-product"
 
 export default function ProductDetailPage() {
   const { storeId, productId } = useParams<{ storeId: string; productId: string }>()
   const { data: product, isPending, error } = useProduct(storeId, productId)
+  const [selectedVariantId, setSelectedVariantId] = useState<number | null>(null)
 
   if (isPending) {
     return (
       <div className="space-y-6">
         <Skeleton className="h-8 w-64" />
-        <div className="grid gap-6 md:grid-cols-2">
-          <Skeleton className="aspect-square rounded-2xl" />
+        <div className="grid gap-8 lg:grid-cols-2">
+          <Skeleton className="aspect-[3/4] rounded-2xl" />
           <div className="space-y-4">
-            <Skeleton className="h-6 w-48" />
-            <Skeleton className="h-4 w-32" />
+            <Skeleton className="h-10 w-32" />
+            <Skeleton className="h-6 w-24" />
+            <Skeleton className="h-px w-full" />
+            <div className="flex gap-2">
+              <Skeleton className="h-9 w-20 rounded-full" />
+              <Skeleton className="h-9 w-20 rounded-full" />
+              <Skeleton className="h-9 w-20 rounded-full" />
+            </div>
+            <Skeleton className="h-px w-full" />
             <Skeleton className="h-4 w-40" />
+            <Skeleton className="h-4 w-36" />
           </div>
         </div>
       </div>
@@ -38,112 +49,68 @@ export default function ProductDetailPage() {
   const activeImages = (product.images ?? [])
     .filter((img) => !img.isRemoved)
     .sort((a, b) => a.position - b.position)
-  const [primaryImage, ...thumbnailImages] = activeImages
-  const firstVariant = product.variants?.[0]
+
+  const variants = product.variants ?? []
+
+  // Auto-select first variant if none selected
+  const effectiveVariantId = selectedVariantId ?? variants[0]?.id ?? null
+  const selectedVariant =
+    variants.find((v: Variant) => v.id === effectiveVariantId) ?? null
+  const chartVariantId = effectiveVariantId ?? variants[0]?.id
 
   return (
     <div className="space-y-8">
       <Header title={product.title} />
 
-      {/* Images + Info */}
-      <div className="grid gap-6 md:grid-cols-2">
-        {/* Image gallery */}
-        <div className="space-y-3">
-          <div className="bg-muted flex aspect-square items-center justify-center overflow-hidden rounded-2xl">
-            {primaryImage ? (
-              <img
-                src={primaryImage.url}
-                alt={product.title}
-                className="size-full object-cover"
-              />
-            ) : (
-              <ImageIcon className="text-muted-foreground size-16" />
-            )}
-          </div>
-          {thumbnailImages.length > 0 && (
-            <div className="flex gap-2 overflow-x-auto">
-              {thumbnailImages.map((img) => (
-                <img
-                  key={img.id}
-                  src={img.url}
-                  alt=""
-                  loading="lazy"
-                  className="bg-muted size-16 shrink-0 rounded-lg object-cover"
-                />
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Product info */}
-        <div className="space-y-4">
-          <div>
-            <span className="text-3xl font-semibold tabular-nums">
-              ${parseFloat(product.cachedPrice).toFixed(2)}
-            </span>
-            <div className="mt-2">
-              <StockBadge available={product.cachedIsAvailable} />
-            </div>
-          </div>
-          <dl className="text-sm space-y-2">
-            {product.vendor && (
-              <div className="flex gap-2">
-                <dt className="text-muted-foreground w-20 shrink-0">Vendor</dt>
-                <dd>{product.vendor}</dd>
-              </div>
-            )}
-            {product.productType && (
-              <div className="flex gap-2">
-                <dt className="text-muted-foreground w-20 shrink-0">Type</dt>
-                <dd>{product.productType}</dd>
-              </div>
-            )}
-          </dl>
-        </div>
+      {/* Two-column: gallery + info */}
+      <div className="grid gap-8 lg:grid-cols-2">
+        <ImageGallery images={activeImages} productTitle={product.title} />
+        <ProductInfo
+          product={product}
+          variants={variants}
+          selectedVariant={selectedVariant}
+          selectedVariantId={effectiveVariantId}
+          onSelectVariant={setSelectedVariantId}
+        />
       </div>
 
-      {/* Variants */}
-      {product.variants && product.variants.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Variants</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-border border-b text-start">
-                    <th className="py-2 pe-4 text-start font-medium">Title</th>
-                    <th className="py-2 pe-4 text-start font-medium">SKU</th>
-                    <th className="py-2 pe-4 text-start font-medium">Price</th>
-                    <th className="py-2 pe-4 text-start font-medium">Compare At</th>
-                    <th className="py-2 text-start font-medium">Stock</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {product.variants.map((variant: Variant) => (
-                    <VariantRow key={variant.id} variant={variant} />
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      {/* Tabs: Variants + Price History */}
+      {variants.length > 0 && (
+        <Tabs defaultValue="variants">
+          <TabsList>
+            <TabsTrigger value="variants">All Variants</TabsTrigger>
+            <TabsTrigger value="price-history">Price History</TabsTrigger>
+          </TabsList>
 
-      {/* Price History */}
-      {firstVariant && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Price History</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <PriceHistoryChart
-              productId={product.id}
-              variantId={firstVariant.id}
-            />
-          </CardContent>
-        </Card>
+          <TabsContent value="variants">
+            <Card>
+              <CardContent className="pt-6">
+                <VariantTable
+                  variants={variants}
+                  selectedVariantId={effectiveVariantId}
+                  onSelectVariant={setSelectedVariantId}
+                />
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="price-history">
+            <Card>
+              <CardContent className="pt-6">
+                {chartVariantId ? (
+                  <PriceHistoryChart
+                    productId={product.id}
+                    variantId={chartVariantId}
+                  />
+                ) : (
+                  <p className="text-muted-foreground py-8 text-center text-sm">
+                    No variants available for price history.
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
       )}
     </div>
   )
