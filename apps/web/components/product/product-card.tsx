@@ -14,7 +14,7 @@ export function ProductCard({ product, storeId, imageUrl }: ProductCardProps) {
   return (
     <Link href={`/stores/${storeId}/products/${product.id}`} className="block">
       <Card className="transition-shadow hover:ring-2 hover:ring-ring/20">
-        <div className="bg-muted flex aspect-square items-center justify-center overflow-hidden rounded-t-2xl">
+        <div className="bg-muted flex aspect-[3/4] items-center justify-center overflow-hidden rounded-t-2xl">
           {imageUrl ? (
             <img
               src={imageUrl}
