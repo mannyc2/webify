@@ -9,6 +9,7 @@ export interface ProductFilters {
   search?: string
   stock?: "all" | "in" | "out"
   sort?: "name" | "price_asc" | "price_desc" | "recent"
+  type?: string
   offset?: number
   limit?: number
 }
@@ -18,6 +19,7 @@ async function fetchProducts(storeId: string, filters: ProductFilters): Promise<
   if (filters.search) params.set("search", filters.search)
   if (filters.stock && filters.stock !== "all") params.set("stock", filters.stock)
   if (filters.sort) params.set("sort", filters.sort)
+  if (filters.type) params.set("type", filters.type)
   if (filters.offset) params.set("offset", String(filters.offset))
   if (filters.limit) params.set("limit", String(filters.limit))
 

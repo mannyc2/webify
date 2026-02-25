@@ -30,6 +30,7 @@ export async function GET(
       search: query.data.search,
       stock: query.data.stock,
       sort: query.data.sort,
+      productType: query.data.type,
       offset: query.data.offset,
       limit: query.data.limit,
     });
