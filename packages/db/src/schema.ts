@@ -56,6 +56,7 @@ export const products = sqliteTable(
     cachedIsAvailable: integer("cached_is_available", { mode: "boolean" })
       .notNull()
       .default(false),
+    cachedImageUrl: text("cached_image_url"),
     titleSearchKey: text("title_search_key").notNull().default(""),
   },
   (table) => [
@@ -348,6 +349,42 @@ export const archiveImportJobs = sqliteTable(
 );
 
 // ---------------------------------------------------------------------------
+// queue_jobs — tracks high-level queue job lifecycle
+// ---------------------------------------------------------------------------
+
+export const queueJobs = sqliteTable(
+  "queue_jobs",
+  {
+    id: text("id").primaryKey(), // UUID
+    parentId: text("parent_id"), // self-FK: scrape_stale → its sync_store
+    queue: text("queue", { enum: ["sync", "scrape"] as const }).notNull(),
+    jobType: text("job_type", {
+      enum: ["sync_store", "scrape_stale", "archive_discover"] as const,
+    }).notNull(),
+    storeDomain: text("store_domain").notNull(),
+    status: text("status", {
+      enum: ["queued", "running", "completed", "failed"] as const,
+    })
+      .notNull()
+      .default("queued"),
+    createdAt: text("created_at").notNull(),
+    startedAt: text("started_at"),
+    completedAt: text("completed_at"),
+    durationMs: integer("duration_ms"),
+    attempt: integer("attempt").notNull().default(1),
+    itemsEnqueued: integer("items_enqueued"), // fan-out count
+    resultSummary: text("result_summary"), // e.g. "42 products, 3 changes"
+    error: text("error"),
+  },
+  (table) => [
+    index("idx_qj_status").on(table.status),
+    index("idx_qj_created").on(table.createdAt),
+    index("idx_qj_parent").on(table.parentId),
+    index("idx_qj_store_type").on(table.storeDomain, table.jobType),
+  ],
+);
+
+// ---------------------------------------------------------------------------
 // relations (v2 — defineRelations)
 // ---------------------------------------------------------------------------
 
@@ -364,6 +401,7 @@ export const relations = defineRelations(
     waybackSnapshots,
     waybackProductData,
     archiveImportJobs,
+    queueJobs,
   },
   (r) => ({
     stores: {
@@ -445,5 +483,6 @@ export const relations = defineRelations(
         to: r.stores.domain,
       }),
     },
+    queueJobs: {},
   }),
 );

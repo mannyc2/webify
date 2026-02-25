@@ -12,6 +12,7 @@ import {
   waybackSnapshots,
   waybackProductData,
   archiveImportJobs,
+  queueJobs,
 } from "./schema";
 
 export const ChangeType = {
@@ -111,3 +112,4 @@ export type NewWaybackSnapshot = typeof waybackSnapshots.$inferInsert;
 export type WaybackProductDataRow = typeof waybackProductData.$inferSelect;
 export type ArchiveImportJob = typeof archiveImportJobs.$inferSelect;
 export type NewArchiveImportJob = typeof archiveImportJobs.$inferInsert;
+export type QueueJob = typeof queueJobs.$inferSelect;
