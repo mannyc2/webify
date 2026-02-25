@@ -54,7 +54,12 @@ export function getProductsByStore(
   }
 
   if (options?.productType) {
-    where.productType = options.productType;
+    const types = options.productType.split(",").map((t) => t.trim()).filter(Boolean);
+    if (types.length === 1) {
+      where.productType = types[0];
+    } else if (types.length > 1) {
+      where.productType = { in: types };
+    }
   }
 
   let orderBy: Record<string, string>;
