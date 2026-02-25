@@ -193,15 +193,184 @@ export const changeEvents = sqliteTable(
 );
 
 // ---------------------------------------------------------------------------
+// product_videos — first-class video URL tracking (mirrors productImages)
+// ---------------------------------------------------------------------------
+
+export const productVideos = sqliteTable(
+  "product_videos",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    productId: integer("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    src: text("src").notNull(),
+    format: text("format", { enum: ["mp4", "webm", "m3u8", "youtube", "vimeo", "unknown"] as const })
+      .notNull()
+      .default("unknown"),
+    height: integer("height"),
+    position: integer("position").notNull().default(0),
+    alt: text("alt"),
+    firstSeenAt: text("first_seen_at")
+      .notNull()
+      .$defaultFn(() => new Date().toISOString()),
+    lastSeenAt: text("last_seen_at")
+      .notNull()
+      .$defaultFn(() => new Date().toISOString()),
+    isRemoved: integer("is_removed", { mode: "boolean" })
+      .notNull()
+      .default(false),
+    removedAt: text("removed_at"),
+    source: text("source", { enum: ["live_scrape", "wayback"] as const })
+      .notNull()
+      .default("live_scrape"),
+    waybackTimestamp: text("wayback_timestamp"),
+  },
+  (table) => [
+    index("idx_videos_product").on(table.productId),
+    index("idx_videos_product_active").on(table.productId, table.isRemoved),
+    index("idx_videos_src").on(table.src),
+    index("idx_videos_first_seen").on(table.firstSeenAt),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// scrape_state — per-product scrape tracking
+// ---------------------------------------------------------------------------
+
+export const scrapeState = sqliteTable(
+  "scrape_state",
+  {
+    productId: integer("product_id")
+      .primaryKey()
+      .references(() => products.id, { onDelete: "cascade" }),
+    lastScrapedAt: text("last_scraped_at"),
+    scrapeStrategy: text("scrape_strategy"),
+    scrapeStatus: text("scrape_status", { enum: ["pending", "success", "failed", "skipped"] as const })
+      .notNull()
+      .default("pending"),
+    lastError: text("last_error"),
+    videoCount: integer("video_count").notNull().default(0),
+  },
+);
+
+// ---------------------------------------------------------------------------
+// wayback_snapshots — CDX discovery results
+// ---------------------------------------------------------------------------
+
+export const waybackSnapshots = sqliteTable(
+  "wayback_snapshots",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    storeDomain: text("store_domain")
+      .notNull()
+      .references(() => stores.domain, { onDelete: "cascade" }),
+    url: text("url").notNull(),
+    handle: text("handle").notNull(),
+    timestamp: text("timestamp").notNull(), // 14-digit wayback timestamp
+    digest: text("digest").notNull(),
+    statusCode: integer("status_code").notNull(),
+    mimeType: text("mime_type").notNull(),
+    length: integer("length").notNull().default(0),
+    fetchStatus: text("fetch_status", { enum: ["pending", "fetched", "failed", "skipped"] as const })
+      .notNull()
+      .default("pending"),
+    fetchedAt: text("fetched_at"),
+    fetchError: text("fetch_error"),
+  },
+  (table) => [
+    index("idx_wayback_store").on(table.storeDomain),
+    index("idx_wayback_handle").on(table.handle),
+    index("idx_wayback_digest").on(table.digest),
+    index("idx_wayback_fetch_status").on(table.fetchStatus),
+    index("idx_wayback_store_handle").on(table.storeDomain, table.handle),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// wayback_product_data — parsed data from fetched snapshots
+// ---------------------------------------------------------------------------
+
+export const waybackProductData = sqliteTable(
+  "wayback_product_data",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    snapshotId: integer("snapshot_id")
+      .notNull()
+      .references(() => waybackSnapshots.id, { onDelete: "cascade" }),
+    storeDomain: text("store_domain")
+      .notNull()
+      .references(() => stores.domain, { onDelete: "cascade" }),
+    handle: text("handle").notNull(),
+    title: text("title"),
+    vendor: text("vendor"),
+    productType: text("product_type"),
+    extractionStrategy: text("extraction_strategy"),
+    variantsJson: text("variants_json"), // JSON array of variant objects
+    imagesJson: text("images_json"),     // JSON array of image URLs
+    videosJson: text("videos_json"),     // JSON array of video objects
+    rawPrice: text("raw_price"),
+    capturedAt: text("captured_at").notNull(), // wayback timestamp as ISO
+  },
+  (table) => [
+    index("idx_wpd_snapshot").on(table.snapshotId),
+    index("idx_wpd_store").on(table.storeDomain),
+    index("idx_wpd_handle").on(table.handle),
+    index("idx_wpd_captured").on(table.capturedAt),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// archive_import_jobs — tracks overall import progress
+// ---------------------------------------------------------------------------
+
+export const archiveImportJobs = sqliteTable(
+  "archive_import_jobs",
+  {
+    id: text("id").primaryKey(), // UUID
+    storeDomain: text("store_domain")
+      .notNull()
+      .references(() => stores.domain, { onDelete: "cascade" }),
+    status: text("status", { enum: ["discovering", "fetching", "completed", "failed"] as const })
+      .notNull()
+      .default("discovering"),
+    totalSnapshots: integer("total_snapshots").notNull().default(0),
+    fetchedSnapshots: integer("fetched_snapshots").notNull().default(0),
+    failedSnapshots: integer("failed_snapshots").notNull().default(0),
+    startedAt: text("started_at")
+      .notNull()
+      .$defaultFn(() => new Date().toISOString()),
+    completedAt: text("completed_at"),
+  },
+  (table) => [
+    index("idx_aij_store").on(table.storeDomain),
+    index("idx_aij_status").on(table.status),
+  ],
+);
+
+// ---------------------------------------------------------------------------
 // relations (v2 — defineRelations)
 // ---------------------------------------------------------------------------
 
 export const relations = defineRelations(
-  { stores, products, productImages, variants, variantSnapshots, changeEvents },
+  {
+    stores,
+    products,
+    productImages,
+    variants,
+    variantSnapshots,
+    changeEvents,
+    productVideos,
+    scrapeState,
+    waybackSnapshots,
+    waybackProductData,
+    archiveImportJobs,
+  },
   (r) => ({
     stores: {
       products: r.many.products(),
       changeEvents: r.many.changeEvents(),
+      waybackSnapshots: r.many.waybackSnapshots(),
+      archiveImportJobs: r.many.archiveImportJobs(),
     },
     products: {
       store: r.one.stores({
@@ -210,10 +379,21 @@ export const relations = defineRelations(
       }),
       variants: r.many.variants(),
       images: r.many.productImages(),
+      videos: r.many.productVideos(),
+      scrapeState: r.one.scrapeState({
+        from: r.products.id,
+        to: r.scrapeState.productId,
+      }),
     },
     productImages: {
       product: r.one.products({
         from: r.productImages.productId,
+        to: r.products.id,
+      }),
+    },
+    productVideos: {
+      product: r.one.products({
+        from: r.productVideos.productId,
         to: r.products.id,
       }),
     },
@@ -233,6 +413,35 @@ export const relations = defineRelations(
     changeEvents: {
       store: r.one.stores({
         from: r.changeEvents.storeDomain,
+        to: r.stores.domain,
+      }),
+    },
+    scrapeState: {
+      product: r.one.products({
+        from: r.scrapeState.productId,
+        to: r.products.id,
+      }),
+    },
+    waybackSnapshots: {
+      store: r.one.stores({
+        from: r.waybackSnapshots.storeDomain,
+        to: r.stores.domain,
+      }),
+      productData: r.many.waybackProductData(),
+    },
+    waybackProductData: {
+      snapshot: r.one.waybackSnapshots({
+        from: r.waybackProductData.snapshotId,
+        to: r.waybackSnapshots.id,
+      }),
+      store: r.one.stores({
+        from: r.waybackProductData.storeDomain,
+        to: r.stores.domain,
+      }),
+    },
+    archiveImportJobs: {
+      store: r.one.stores({
+        from: r.archiveImportJobs.storeDomain,
         to: r.stores.domain,
       }),
     },

@@ -1,4 +1,4 @@
-import { eq, inArray } from "drizzle-orm";
+import { eq, inArray, and, or, lt, isNull } from "drizzle-orm";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
 import * as schema from "./schema";
 
@@ -201,4 +201,109 @@ export function markEventsReadBatch(db: Database, eventIds: string[]) {
     .update(schema.changeEvents)
     .set({ isRead: true })
     .where(inArray(schema.changeEvents.id, eventIds));
+}
+
+// ---------------------------------------------------------------------------
+// product videos
+// ---------------------------------------------------------------------------
+
+export function getProductVideos(
+  db: Database,
+  productId: number,
+  options?: { includeRemoved?: boolean },
+) {
+  const where: Record<string, unknown> = { productId };
+
+  if (!options?.includeRemoved) {
+    where.isRemoved = false;
+  }
+
+  return db.query.productVideos.findMany({
+    where,
+    orderBy: { position: "asc" },
+  });
+}
+
+export function getProductVideosActive(db: Database, productId: number) {
+  return db.query.productVideos.findMany({
+    where: { productId, isRemoved: false },
+    orderBy: { position: "asc" },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// scrape state
+// ---------------------------------------------------------------------------
+
+export function getScrapeState(db: Database, productId: number) {
+  return db.query.scrapeState.findFirst({
+    where: { productId },
+  });
+}
+
+export function getStaleProducts(
+  db: Database,
+  storeDomain: string,
+  staleThresholdMs: number,
+) {
+  const threshold = new Date(Date.now() - staleThresholdMs).toISOString();
+
+  return db
+    .select({ id: schema.products.id, handle: schema.products.handle })
+    .from(schema.products)
+    .leftJoin(schema.scrapeState, eq(schema.products.id, schema.scrapeState.productId))
+    .where(
+      and(
+        eq(schema.products.storeDomain, storeDomain),
+        eq(schema.products.isRemoved, false),
+        or(
+          isNull(schema.scrapeState.productId),
+          lt(schema.scrapeState.lastScrapedAt, threshold),
+        ),
+      ),
+    );
+}
+
+// ---------------------------------------------------------------------------
+// wayback snapshots
+// ---------------------------------------------------------------------------
+
+export function getPendingSnapshots(
+  db: Database,
+  storeDomain: string,
+  options?: { limit?: number },
+) {
+  return db.query.waybackSnapshots.findMany({
+    where: { storeDomain, fetchStatus: "pending" },
+    orderBy: { timestamp: "asc" },
+    limit: options?.limit ?? 50,
+  });
+}
+
+export function getSnapshotsByHandle(
+  db: Database,
+  storeDomain: string,
+  handle: string,
+) {
+  return db.query.waybackSnapshots.findMany({
+    where: { storeDomain, handle },
+    orderBy: { timestamp: "asc" },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// archive import jobs
+// ---------------------------------------------------------------------------
+
+export function getArchiveImportJob(db: Database, jobId: string) {
+  return db.query.archiveImportJobs.findFirst({
+    where: { id: jobId },
+  });
+}
+
+export function getArchiveImportJobs(db: Database, storeDomain: string) {
+  return db.query.archiveImportJobs.findMany({
+    where: { storeDomain },
+    orderBy: { startedAt: "desc" },
+  });
 }

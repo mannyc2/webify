@@ -7,6 +7,11 @@ import {
   variants,
   variantSnapshots,
   changeEvents,
+  productVideos,
+  scrapeState,
+  waybackSnapshots,
+  waybackProductData,
+  archiveImportJobs,
 } from "./schema";
 
 export const ChangeType = {
@@ -49,3 +54,60 @@ export type Variant = typeof variants.$inferSelect;
 export type VariantSnapshot = typeof variantSnapshots.$inferSelect;
 export type ChangeEvent = typeof changeEvents.$inferSelect;
 export type NewChangeEvent = typeof changeEvents.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// New enums
+// ---------------------------------------------------------------------------
+
+export const VideoFormat = {
+  mp4: "mp4",
+  webm: "webm",
+  m3u8: "m3u8",
+  youtube: "youtube",
+  vimeo: "vimeo",
+  unknown: "unknown",
+} as const;
+export type VideoFormat = (typeof VideoFormat)[keyof typeof VideoFormat];
+
+export const VideoSource = {
+  liveScrape: "live_scrape",
+  wayback: "wayback",
+} as const;
+export type VideoSource = (typeof VideoSource)[keyof typeof VideoSource];
+
+export const ScrapeStatus = {
+  pending: "pending",
+  success: "success",
+  failed: "failed",
+  skipped: "skipped",
+} as const;
+export type ScrapeStatus = (typeof ScrapeStatus)[keyof typeof ScrapeStatus];
+
+export const FetchStatus = {
+  pending: "pending",
+  fetched: "fetched",
+  failed: "failed",
+  skipped: "skipped",
+} as const;
+export type FetchStatus = (typeof FetchStatus)[keyof typeof FetchStatus];
+
+export const ImportStatus = {
+  discovering: "discovering",
+  fetching: "fetching",
+  completed: "completed",
+  failed: "failed",
+} as const;
+export type ImportStatus = (typeof ImportStatus)[keyof typeof ImportStatus];
+
+// ---------------------------------------------------------------------------
+// New canonical types
+// ---------------------------------------------------------------------------
+
+export type ProductVideo = typeof productVideos.$inferSelect;
+export type NewProductVideo = typeof productVideos.$inferInsert;
+export type ScrapeState = typeof scrapeState.$inferSelect;
+export type WaybackSnapshotRow = typeof waybackSnapshots.$inferSelect;
+export type NewWaybackSnapshot = typeof waybackSnapshots.$inferInsert;
+export type WaybackProductDataRow = typeof waybackProductData.$inferSelect;
+export type ArchiveImportJob = typeof archiveImportJobs.$inferSelect;
+export type NewArchiveImportJob = typeof archiveImportJobs.$inferInsert;

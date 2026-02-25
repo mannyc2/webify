@@ -66,3 +66,7 @@ export const eventsQuerySchema = z.object({
   offset: z.coerce.number().int().min(0).optional(),
   limit: z.coerce.number().int().min(1).max(200).optional(),
 });
+
+export const archiveImportSchema = z.object({
+  store_domain: z.string().min(1).optional(), // optional since storeId is in URL
+});

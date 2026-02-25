@@ -4,6 +4,7 @@ export interface Env {
   DB: D1Database;
   CACHE: KVNamespace;
   SYNC_QUEUE: Queue;
+  SCRAPE_QUEUE: Queue;
 }
 
 export function getEnv(): Env {

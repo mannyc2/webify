@@ -74,6 +74,7 @@ export interface SyncResult {
 export async function syncStore(
   db: Database,
   domain: string,
+  scrapeQueue?: Queue,
 ): Promise<SyncResult> {
   try {
     const shopifyProducts = await fetchProducts(domain);
@@ -252,6 +253,11 @@ export async function syncStore(
 
     // Execute ALL writes in batched D1 calls
     await batchExecute(db, writes);
+
+    // Enqueue scrape_stale to check for products needing re-scrape
+    if (scrapeQueue) {
+      await scrapeQueue.send({ type: "scrape_stale", domain });
+    }
 
     return { productCount: shopifyProducts.length, changeCount: changes.length };
   } catch (error) {

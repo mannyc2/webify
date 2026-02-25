@@ -29,12 +29,16 @@
     }
   ],
 
-  // Queue producer — enqueue manual sync jobs for the sync worker
+  // Queue producers — enqueue jobs for workers
   "queues": {
     "producers": [
       {
         "binding": "SYNC_QUEUE",
         "queue": "webify-sync-jobs"
+      },
+      {
+        "binding": "SCRAPE_QUEUE",
+        "queue": "webify-scrape-jobs"
       }
     ]
   }

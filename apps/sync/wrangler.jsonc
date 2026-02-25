@@ -24,6 +24,10 @@
       {
         "binding": "SYNC_QUEUE",
         "queue": "webify-sync-jobs"
+      },
+      {
+        "binding": "SCRAPE_QUEUE",
+        "queue": "webify-scrape-jobs"
       }
     ],
     "consumers": [
@@ -33,6 +37,13 @@
         "max_batch_timeout": 30,
         "max_retries": 3,
         "dead_letter_queue": "webify-sync-dlq"
+      },
+      {
+        "queue": "webify-scrape-jobs",
+        "max_batch_size": 1,
+        "max_batch_timeout": 10,
+        "max_retries": 5,
+        "dead_letter_queue": "webify-scrape-dlq"
       }
     ]
   },
