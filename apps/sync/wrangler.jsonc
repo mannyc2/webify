@@ -9,7 +9,8 @@
     {
       "binding": "DB",
       "database_name": "webify-db",
-      "database_id": "a3ba5379-d70c-4c28-ac89-b504ed667e9d"
+      "database_id": "a3ba5379-d70c-4c28-ac89-b504ed667e9d",
+      "migrations_dir": "../../packages/db/migrations"
     }
   ],
 

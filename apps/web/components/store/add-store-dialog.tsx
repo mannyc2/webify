@@ -30,15 +30,12 @@ export function AddStoreDialog({ onAdd }: AddStoreDialogProps) {
     e.preventDefault()
     setError("")
 
+    // Strip protocol, path, trailing slashes so users can paste full URLs
     const trimmed = domain.trim()
+      .replace(/^https?:\/\//, "")
+      .replace(/\/.*$/, "")
     if (!trimmed) {
       setError("Domain is required")
-      return
-    }
-
-    // Basic domain validation
-    if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*\.[a-z]{2,}$/i.test(trimmed)) {
-      setError("Please enter a valid domain (e.g. store.myshopify.com)")
       return
     }
 

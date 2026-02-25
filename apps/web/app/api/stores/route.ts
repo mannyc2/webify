@@ -61,6 +61,7 @@ export async function POST(request: Request) {
     try {
       const res = await fetch(`https://${domain}/products.json?limit=1`, {
         signal: AbortSignal.timeout(10000),
+        headers: { "User-Agent": "Webify/1.0" },
       });
       if (!res.ok) {
         throw new ApiError(

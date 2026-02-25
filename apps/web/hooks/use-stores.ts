@@ -28,8 +28,8 @@ export function useStores() {
         body: JSON.stringify({ domain, name }),
       })
       if (!res.ok) {
-        const err = (await res.json().catch(() => ({}))) as { message?: string }
-        throw new Error(err.message ?? "Failed to add store")
+        const err = (await res.json().catch(() => ({}))) as { error?: string }
+        throw new Error(err.error ?? "Failed to add store")
       }
       return storeResponseSchema.parse(await res.json())
     },
