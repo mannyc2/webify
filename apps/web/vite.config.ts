@@ -9,4 +9,9 @@ export default defineConfig({
       viteEnvironment: { name: "rsc", childEnvironments: ["ssr"] },
     }),
   ],
+  build: {
+    rollupOptions: {
+      external: [/^cloudflare:/],
+    },
+  },
 });

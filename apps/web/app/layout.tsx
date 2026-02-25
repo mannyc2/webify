@@ -1,11 +1,8 @@
 import type { Metadata } from "next"
-import { Figtree } from "next/font/google"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { Shell } from "@/components/layout/shell"
 import { Providers } from "./providers"
 import "./globals.css"
-
-const figtree = Figtree({ subsets: ["latin"], variable: "--font-sans" })
 
 export const metadata: Metadata = {
   title: "Webify",
@@ -18,7 +15,7 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" className={figtree.variable}>
+    <html lang="en">
       <body className="antialiased">
         <Providers>
           <TooltipProvider>
