@@ -27,162 +27,159 @@ export async function syncStore(
   domain: string,
 ): Promise<void> {
   try {
-    // HTTP fetch stays outside the transaction
     const shopifyProducts = await fetchProducts(domain);
 
-    await db.transaction(async (tx) => {
-      const existingProducts = await tx.query.products.findMany({
-        where: { storeDomain: domain, isRemoved: false },
-        with: { variants: true, images: true },
-      });
-
-      // Also fetch removed products that may re-appear
-      const removedProducts = await tx.query.products.findMany({
-        where: { storeDomain: domain, isRemoved: true },
-        with: { variants: true, images: true },
-      });
-
-      const allExisting = [...existingProducts, ...removedProducts];
-      const existingById = new Map(allExisting.map((p) => [p.id, p]));
-      const fetchedIdSet = new Set(shopifyProducts.map((p) => p.id));
-      const changes: ChangeEventData[] = [];
-      const now = new Date().toISOString();
-
-      for (const shopifyProduct of shopifyProducts) {
-        const existing = existingById.get(shopifyProduct.id);
-
-        if (!existing) {
-          // New product — insert product + variants + images
-          await insertNewProduct(tx, domain, shopifyProduct, now);
-          changes.push({
-            changeType: ChangeType.newProduct,
-            magnitude: ChangeMagnitude.medium,
-            productTitle: shopifyProduct.title,
-            variantTitle: null,
-            oldValue: null,
-            newValue: null,
-            priceChange: null,
-            productShopifyId: shopifyProduct.id,
-          });
-        } else {
-          // Existing product — detect changes, then update
-          if (existing.isRemoved) {
-            await tx
-              .update(products)
-              .set({ isRemoved: false })
-              .where(eq(products.id, existing.id));
-          }
-
-          const existingVariantsById = new Map(
-            existing.variants.map((v) => [v.id, v]),
-          );
-
-          // Detect variant-level changes
-          for (const fetchedVariant of shopifyProduct.variants) {
-            const existingVariant = existingVariantsById.get(fetchedVariant.id);
-            if (!existingVariant) continue;
-
-            const priceChange = detectPriceChanges(
-              existingVariant,
-              fetchedVariant,
-              existing.title,
-              existing.id,
-            );
-            if (priceChange) changes.push(priceChange);
-
-            const stockChange = detectStockChanges(
-              existingVariant,
-              fetchedVariant,
-              existing.title,
-              existing.id,
-            );
-            if (stockChange) changes.push(stockChange);
-
-            // Create snapshot if price or availability changed
-            if (
-              existingVariant.price !== fetchedVariant.price ||
-              existingVariant.compareAtPrice !== fetchedVariant.compare_at_price ||
-              existingVariant.available !== fetchedVariant.available
-            ) {
-              await tx.insert(variantSnapshots).values({
-                variantId: existingVariant.id,
-                capturedAt: now,
-                price: existingVariant.price,
-                compareAtPrice: existingVariant.compareAtPrice,
-                available: existingVariant.available,
-              });
-            }
-          }
-
-          // Detect image changes
-          const activeImages = existing.images.filter((img) => !img.isRemoved);
-          const imageChange = detectImageChanges(
-            {
-              id: existing.id,
-              title: existing.title,
-              images: activeImages,
-            },
-            shopifyProduct,
-          );
-          if (imageChange) changes.push(imageChange);
-
-          // Update product fields + images
-          await updateExistingProduct(tx, existing.id, shopifyProduct, now);
-        }
-      }
-
-      // Mark products removed: active products not in fetched set
-      for (const existing of existingProducts) {
-        if (!fetchedIdSet.has(existing.id) && !existing.isRemoved) {
-          await tx
-            .update(products)
-            .set({ isRemoved: true })
-            .where(eq(products.id, existing.id));
-
-          changes.push({
-            changeType: ChangeType.productRemoved,
-            magnitude: ChangeMagnitude.medium,
-            productTitle: existing.title,
-            variantTitle: null,
-            oldValue: null,
-            newValue: null,
-            priceChange: null,
-            productShopifyId: null,
-          });
-        }
-      }
-
-      // Batch insert change events
-      if (changes.length > 0) {
-        await tx.insert(changeEvents).values(
-          changes.map((c) => ({
-            id: crypto.randomUUID(),
-            storeDomain: domain,
-            occurredAt: now,
-            changeType: c.changeType,
-            magnitude: c.magnitude,
-            productTitle: c.productTitle,
-            variantTitle: c.variantTitle,
-            oldValue: c.oldValue,
-            newValue: c.newValue,
-            priceChange: c.priceChange,
-            isRead: false,
-            productShopifyId: c.productShopifyId,
-          })),
-        );
-      }
-
-      // Update store metadata
-      await tx
-        .update(stores)
-        .set({
-          lastFetchedAt: now,
-          syncStatus: SyncStatus.healthy,
-          lastError: null,
-          cachedProductCount: shopifyProducts.length,
-        })
-        .where(eq(stores.domain, domain));
+    const existingProducts = await db.query.products.findMany({
+      where: { storeDomain: domain, isRemoved: false },
+      with: { variants: true, images: true },
     });
+
+    // Also fetch removed products that may re-appear
+    const removedProducts = await db.query.products.findMany({
+      where: { storeDomain: domain, isRemoved: true },
+      with: { variants: true, images: true },
+    });
+
+    const allExisting = [...existingProducts, ...removedProducts];
+    const existingById = new Map(allExisting.map((p) => [p.id, p]));
+    const fetchedIdSet = new Set(shopifyProducts.map((p) => p.id));
+    const changes: ChangeEventData[] = [];
+    const now = new Date().toISOString();
+
+    for (const shopifyProduct of shopifyProducts) {
+      const existing = existingById.get(shopifyProduct.id);
+
+      if (!existing) {
+        // New product — insert product + variants + images
+        await insertNewProduct(db, domain, shopifyProduct, now);
+        changes.push({
+          changeType: ChangeType.newProduct,
+          magnitude: ChangeMagnitude.medium,
+          productTitle: shopifyProduct.title,
+          variantTitle: null,
+          oldValue: null,
+          newValue: null,
+          priceChange: null,
+          productShopifyId: shopifyProduct.id,
+        });
+      } else {
+        // Existing product — detect changes, then update
+        if (existing.isRemoved) {
+          await db
+            .update(products)
+            .set({ isRemoved: false })
+            .where(eq(products.id, existing.id));
+        }
+
+        const existingVariantsById = new Map(
+          existing.variants.map((v) => [v.id, v]),
+        );
+
+        // Detect variant-level changes
+        for (const fetchedVariant of shopifyProduct.variants) {
+          const existingVariant = existingVariantsById.get(fetchedVariant.id);
+          if (!existingVariant) continue;
+
+          const priceChange = detectPriceChanges(
+            existingVariant,
+            fetchedVariant,
+            existing.title,
+            existing.id,
+          );
+          if (priceChange) changes.push(priceChange);
+
+          const stockChange = detectStockChanges(
+            existingVariant,
+            fetchedVariant,
+            existing.title,
+            existing.id,
+          );
+          if (stockChange) changes.push(stockChange);
+
+          // Create snapshot if price or availability changed
+          if (
+            existingVariant.price !== fetchedVariant.price ||
+            existingVariant.compareAtPrice !== fetchedVariant.compare_at_price ||
+            existingVariant.available !== fetchedVariant.available
+          ) {
+            await db.insert(variantSnapshots).values({
+              variantId: existingVariant.id,
+              capturedAt: now,
+              price: existingVariant.price,
+              compareAtPrice: existingVariant.compareAtPrice,
+              available: existingVariant.available,
+            });
+          }
+        }
+
+        // Detect image changes
+        const activeImages = existing.images.filter((img) => !img.isRemoved);
+        const imageChange = detectImageChanges(
+          {
+            id: existing.id,
+            title: existing.title,
+            images: activeImages,
+          },
+          shopifyProduct,
+        );
+        if (imageChange) changes.push(imageChange);
+
+        // Update product fields + images
+        await updateExistingProduct(db, existing.id, shopifyProduct, now);
+      }
+    }
+
+    // Mark products removed: active products not in fetched set
+    for (const existing of existingProducts) {
+      if (!fetchedIdSet.has(existing.id) && !existing.isRemoved) {
+        await db
+          .update(products)
+          .set({ isRemoved: true })
+          .where(eq(products.id, existing.id));
+
+        changes.push({
+          changeType: ChangeType.productRemoved,
+          magnitude: ChangeMagnitude.medium,
+          productTitle: existing.title,
+          variantTitle: null,
+          oldValue: null,
+          newValue: null,
+          priceChange: null,
+          productShopifyId: null,
+        });
+      }
+    }
+
+    // Batch insert change events
+    if (changes.length > 0) {
+      await db.insert(changeEvents).values(
+        changes.map((c) => ({
+          id: crypto.randomUUID(),
+          storeDomain: domain,
+          occurredAt: now,
+          changeType: c.changeType,
+          magnitude: c.magnitude,
+          productTitle: c.productTitle,
+          variantTitle: c.variantTitle,
+          oldValue: c.oldValue,
+          newValue: c.newValue,
+          priceChange: c.priceChange,
+          isRead: false,
+          productShopifyId: c.productShopifyId,
+        })),
+      );
+    }
+
+    // Update store metadata
+    await db
+      .update(stores)
+      .set({
+        lastFetchedAt: now,
+        syncStatus: SyncStatus.healthy,
+        lastError: null,
+        cachedProductCount: shopifyProducts.length,
+      })
+      .where(eq(stores.domain, domain));
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Unknown sync error";
@@ -198,7 +195,7 @@ export async function syncStore(
 }
 
 async function insertNewProduct(
-  tx: Parameters<Parameters<Database["transaction"]>[0]>[0],
+  db: Database,
   domain: string,
   shopify: ShopifyProduct,
   now: string,
@@ -207,7 +204,7 @@ async function insertNewProduct(
   const cachedPrice = firstVariant?.price ?? "0";
   const cachedIsAvailable = shopify.variants.some((v) => v.available);
 
-  await tx.insert(products).values({
+  await db.insert(products).values({
     id: shopify.id,
     storeDomain: domain,
     handle: shopify.handle,
@@ -226,7 +223,7 @@ async function insertNewProduct(
 
   // Batch insert variants
   if (shopify.variants.length > 0) {
-    await tx.insert(variants).values(
+    await db.insert(variants).values(
       shopify.variants.map((v) => ({
         id: v.id,
         productId: shopify.id,
@@ -242,7 +239,7 @@ async function insertNewProduct(
 
   // Batch insert images
   if (shopify.images.length > 0) {
-    await tx.insert(productImages).values(
+    await db.insert(productImages).values(
       shopify.images.map((img, i) => ({
         productId: shopify.id,
         url: img.src,
@@ -256,7 +253,7 @@ async function insertNewProduct(
 }
 
 async function updateExistingProduct(
-  tx: Parameters<Parameters<Database["transaction"]>[0]>[0],
+  db: Database,
   productId: number,
   shopify: ShopifyProduct,
   now: string,
@@ -264,7 +261,7 @@ async function updateExistingProduct(
   const cachedPrice = shopify.variants[0]?.price ?? "0";
   const cachedIsAvailable = shopify.variants.some((v) => v.available);
 
-  await tx
+  await db
     .update(products)
     .set({
       handle: shopify.handle,
@@ -279,7 +276,7 @@ async function updateExistingProduct(
     .where(eq(products.id, productId));
 
   // --- Variants ---
-  const existingVariants = await tx.query.variants.findMany({
+  const existingVariants = await db.query.variants.findMany({
     where: { productId },
   });
   const existingVariantIds = new Set(existingVariants.map((v) => v.id));
@@ -287,7 +284,7 @@ async function updateExistingProduct(
 
   for (const v of shopify.variants) {
     if (existingVariantIds.has(v.id)) {
-      await tx
+      await db
         .update(variants)
         .set({
           title: v.title,
@@ -299,7 +296,7 @@ async function updateExistingProduct(
         })
         .where(eq(variants.id, v.id));
     } else {
-      await tx.insert(variants).values({
+      await db.insert(variants).values({
         id: v.id,
         productId,
         title: v.title,
@@ -315,12 +312,12 @@ async function updateExistingProduct(
   // Delete variants no longer in Shopify feed
   for (const existing of existingVariants) {
     if (!fetchedVariantIds.has(existing.id)) {
-      await tx.delete(variants).where(eq(variants.id, existing.id));
+      await db.delete(variants).where(eq(variants.id, existing.id));
     }
   }
 
   // --- Images (soft-delete model) ---
-  const existingImages = await tx.query.productImages.findMany({
+  const existingImages = await db.query.productImages.findMany({
     where: { productId },
   });
   const existingUrlMap = new Map(
@@ -334,7 +331,7 @@ async function updateExistingProduct(
     const existing = existingUrlMap.get(url);
     if (existing) {
       // Update last seen + un-remove if needed
-      await tx
+      await db
         .update(productImages)
         .set({
           lastSeenAt: now,
@@ -344,7 +341,7 @@ async function updateExistingProduct(
         })
         .where(eq(productImages.id, existing.id));
     } else {
-      await tx.insert(productImages).values({
+      await db.insert(productImages).values({
         productId,
         url,
         position: i,
@@ -358,7 +355,7 @@ async function updateExistingProduct(
   // Soft-delete images no longer in Shopify feed
   for (const existing of existingImages) {
     if (!fetchedUrls.has(existing.url) && !existing.isRemoved) {
-      await tx
+      await db
         .update(productImages)
         .set({ isRemoved: true, removedAt: now })
         .where(eq(productImages.id, existing.id));
