@@ -75,6 +75,7 @@ export async function syncStore(
   db: Database,
   domain: string,
   scrapeQueue?: Queue,
+  queueJobId?: string,
 ): Promise<SyncResult> {
   try {
     const shopifyProducts = await fetchProducts(domain);
@@ -256,7 +257,7 @@ export async function syncStore(
 
     // Enqueue scrape_stale to check for products needing re-scrape
     if (scrapeQueue) {
-      await scrapeQueue.send({ type: "scrape_stale", domain });
+      await scrapeQueue.send({ type: "scrape_stale", domain, parentJobId: queueJobId });
     }
 
     return { productCount: shopifyProducts.length, changeCount: changes.length };
@@ -301,6 +302,7 @@ function collectNewProductWrites(
       shopifyUpdatedAt: shopify.updated_at,
       cachedPrice,
       cachedIsAvailable,
+      cachedImageUrl: shopify.images[0]?.src ?? null,
       titleSearchKey: shopify.title.toLowerCase(),
     }),
   );
@@ -372,6 +374,7 @@ function collectUpdateWrites(
         shopifyUpdatedAt: shopify.updated_at,
         cachedPrice,
         cachedIsAvailable,
+        cachedImageUrl: shopify.images[0]?.src ?? null,
         titleSearchKey: shopify.title.toLowerCase(),
       })
       .where(eq(products.id, productId)),

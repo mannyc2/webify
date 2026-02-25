@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import type { Database } from "@webify/db";
-import { waybackSnapshots, archiveImportJobs } from "@webify/db";
+import { waybackSnapshots, archiveImportJobs, queueJobs } from "@webify/db";
 import { queryCdx, deduplicateByDigestDay } from "@webify/core";
 import { createLogger } from "@webify/db";
 import type { ScrapeJobMessage } from "./types";
@@ -13,8 +13,20 @@ export async function handleArchiveDiscover(
   domain: string,
   jobId: string,
   queue: Queue<ScrapeJobMessage>,
+  _queueJobId?: string,
 ): Promise<void> {
+  const qjId = crypto.randomUUID();
+  const qjStart = new Date().toISOString();
   try {
+    await db.insert(queueJobs).values({
+      id: qjId,
+      queue: "scrape",
+      jobType: "archive_discover",
+      storeDomain: domain,
+      status: "running",
+      createdAt: qjStart,
+      startedAt: qjStart,
+    });
     // Query CDX API for all product page snapshots
     const rawSnapshots = await queryCdx({ domain });
     const deduped = deduplicateByDigestDay(rawSnapshots);
@@ -30,6 +42,13 @@ export async function handleArchiveDiscover(
       await db.update(archiveImportJobs)
         .set({ status: "completed", totalSnapshots: 0, completedAt: new Date().toISOString() })
         .where(eq(archiveImportJobs.id, jobId));
+      await db.update(queueJobs).set({
+        status: "completed",
+        completedAt: new Date().toISOString(),
+        durationMs: Date.now() - new Date(qjStart).getTime(),
+        itemsEnqueued: 0,
+        resultSummary: "0 snapshots",
+      }).where(eq(queueJobs.id, qjId));
       return;
     }
 
@@ -94,8 +113,21 @@ export async function handleArchiveDiscover(
       snapshots: pendingSnaps.length,
       batches: Math.ceil(pendingSnaps.length / BATCH_SIZE),
     });
+
+    await db.update(queueJobs).set({
+      status: "completed",
+      completedAt: new Date().toISOString(),
+      durationMs: Date.now() - new Date(qjStart).getTime(),
+      itemsEnqueued: Math.ceil(pendingSnaps.length / BATCH_SIZE),
+      resultSummary: `${pendingSnaps.length} snapshots, ${Math.ceil(pendingSnaps.length / BATCH_SIZE)} batches`,
+    }).where(eq(queueJobs.id, qjId));
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    await db.update(queueJobs).set({
+      status: "failed",
+      completedAt: new Date().toISOString(),
+      error: message.slice(0, 500),
+    }).where(eq(queueJobs.id, qjId));
     await db.update(archiveImportJobs)
       .set({ status: "failed", completedAt: new Date().toISOString() })
       .where(eq(archiveImportJobs.id, jobId));

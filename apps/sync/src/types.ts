@@ -6,13 +6,14 @@ export interface Env {
 
 export interface SyncJobMessage {
   domain: string;
+  queueJobId?: string;
 }
 
 // Discriminated union for scrape queue messages
 export type ScrapeJobMessage =
-  | { type: "scrape_stale"; domain: string }
+  | { type: "scrape_stale"; domain: string; queueJobId?: string; parentJobId?: string }
   | { type: "scrape_product"; domain: string; productId: number; handle: string }
-  | { type: "archive_discover"; domain: string; jobId: string }
+  | { type: "archive_discover"; domain: string; jobId: string; queueJobId?: string }
   | { type: "archive_batch"; domain: string; jobId: string; snapshots: ArchiveBatchSnapshot[] };
 
 export interface ArchiveBatchSnapshot {
