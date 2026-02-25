@@ -1,0 +1,4 @@
+interface:
+  display_name: "OpenNext Cloudflare"
+  short_description: "Deploy and optimize Next.js on Cloudflare Workers"
+  default_prompt: "Use $opennext-cloudflare to configure, deploy, optimize caching, and troubleshoot a Next.js app on Cloudflare Workers."

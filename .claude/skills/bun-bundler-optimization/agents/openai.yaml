@@ -1,0 +1,4 @@
+interface:
+  display_name: "Bun Bundler Optimization"
+  short_description: "Optimize Bun build size, speed, and output quality"
+  default_prompt: "Optimize my Bun build configuration for bundle size, startup speed, and debugging while keeping behavior safe."

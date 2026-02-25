@@ -1,0 +1,581 @@
+# Schema Reference
+
+Complete reference for Drizzle schema definition.
+
+> **v1 RC Changes:**
+> - `.enableRLS()` deprecated → use `pgTable.withRLS()`
+> - Column `.as('alias')` for inline aliases in queries
+
+## Table of Contents
+1. [Column Types](#column-types)
+2. [Column Modifiers](#column-modifiers)
+3. [Constraints](#constraints)
+4. [Indexes](#indexes)
+5. [Custom Types](#custom-types)
+6. [Generated Columns](#generated-columns)
+7. [PostgreSQL Features](#postgresql-features)
+8. [Schema Organization](#schema-organization)
+
+---
+
+## Column Types
+
+### Numeric Types
+
+```typescript
+import { integer, smallint, bigint, serial, smallserial, bigserial, numeric, real, doublePrecision } from 'drizzle-orm/pg-core';
+
+// Integers
+integer('col')                              // 4-byte signed
+smallint('col')                             // 2-byte signed
+bigint('col', { mode: 'number' })           // 8-byte, inferred as number
+bigint('col', { mode: 'bigint' })           // 8-byte, inferred as bigint
+
+// Auto-increment
+serial('col')                               // 4-byte auto-increment
+smallserial('col')                          // 2-byte auto-increment
+bigserial('col', { mode: 'number' })        // 8-byte auto-increment
+
+// Decimal
+numeric('col')                              // Arbitrary precision
+numeric('col', { precision: 10, scale: 2 }) // decimal(10,2)
+real('col')                                 // 4-byte floating point
+doublePrecision('col')                      // 8-byte floating point
+```
+
+### Text Types
+
+```typescript
+import { text, varchar, char } from 'drizzle-orm/pg-core';
+
+text('col')                                 // Unlimited length
+varchar('col')                              // Variable length
+varchar('col', { length: 256 })             // Max 256 chars
+char('col', { length: 10 })                 // Fixed 10 chars
+
+// Enum-like inference (no runtime validation)
+text('role', { enum: ['admin', 'user', 'guest'] })
+```
+
+### Date/Time Types
+
+```typescript
+import { timestamp, date, time, interval } from 'drizzle-orm/pg-core';
+
+// Timestamp
+timestamp('col')                                    // Without timezone, Date object
+timestamp('col', { withTimezone: true })            // With timezone
+timestamp('col', { mode: 'string' })                // Returns string instead of Date
+timestamp('col', { precision: 6 })                  // Microsecond precision
+
+// Date
+date('col')                                         // Date object
+date('col', { mode: 'string' })                     // String mode
+
+// Time
+time('col')                                         // Time without timezone
+time('col', { withTimezone: true, precision: 6 })   // With timezone
+
+// Interval
+interval('col')
+interval('col', { fields: 'day' })
+interval('col', { fields: 'month', precision: 6 })
+```
+
+### JSON Types
+
+```typescript
+import { json, jsonb } from 'drizzle-orm/pg-core';
+
+json('col')                                         // Text JSON
+jsonb('col')                                        // Binary JSON (better for queries)
+
+// Type-safe JSON
+type UserMeta = { preferences: { theme: string }; tags: string[] };
+jsonb('metadata').$type<UserMeta>()
+```
+
+### Other Types
+
+```typescript
+import { boolean, uuid, bytea, point, line } from 'drizzle-orm/pg-core';
+
+boolean('col')
+uuid('col')
+uuid('col').defaultRandom()                         // gen_random_uuid()
+bytea('col')                                        // Binary data
+
+// Geometric
+point('col')                                        // [number, number]
+point('col', { mode: 'xy' })                        // { x: number, y: number }
+line('col')                                         // [a, b, c]
+line('col', { mode: 'abc' })                        // { a, b, c }
+```
+
+---
+
+## Column Modifiers
+
+### Type Customization
+
+```typescript
+// Custom TypeScript type (doesn't change DB type)
+type UserId = number & { __brand: 'user_id' };
+serial('id').$type<UserId>()
+```
+
+### Default Values
+
+```typescript
+import { sql } from 'drizzle-orm';
+
+// Static default
+integer('count').default(0)
+
+// SQL expression default (included in migrations)
+timestamp('created_at').default(sql`now()`)
+uuid('id').default(sql`gen_random_uuid()`)
+
+// Runtime default (NOT in migrations, evaluated in JS)
+text('id').$defaultFn(() => crypto.randomUUID())
+
+// Drizzle helpers
+timestamp('created_at').defaultNow()
+uuid('id').defaultRandom()
+```
+
+### On Update
+
+```typescript
+// Called on UPDATE if no value provided
+timestamp('updated_at').$onUpdate(() => new Date())
+
+// Increment counter on update
+integer('version').default(1).$onUpdateFn((col): SQL<number> => sql`${col} + 1`)
+```
+
+### Identity Columns (PostgreSQL)
+
+```typescript
+// GENERATED ALWAYS AS IDENTITY - DB always generates, can't override
+integer('id').primaryKey().generatedAlwaysAsIdentity()
+integer('id').generatedAlwaysAsIdentity({ startWith: 1000, increment: 5 })
+
+// GENERATED BY DEFAULT AS IDENTITY - DB generates unless you provide value
+integer('id').primaryKey().generatedByDefaultAsIdentity()
+```
+
+### Column Alias (v1 RC)
+
+```typescript
+// Alias columns directly in queries
+const query = db
+  .select({
+    age: users.age.as('userAge'),
+    id: users.id.as('userId'),
+  })
+  .from(users)
+  .orderBy(asc(users.id.as('userId')));
+```
+
+---
+
+## Constraints
+
+### Primary Key
+
+```typescript
+import { primaryKey } from 'drizzle-orm/pg-core';
+
+// Single column
+serial('id').primaryKey()
+
+// Composite
+pgTable('user_roles', {
+  userId: integer('user_id').notNull(),
+  roleId: integer('role_id').notNull(),
+}, (t) => [
+  primaryKey({ columns: [t.userId, t.roleId] }),
+]);
+```
+
+### Not Null
+
+```typescript
+text('name').notNull()
+```
+
+### Unique
+
+```typescript
+import { unique } from 'drizzle-orm/pg-core';
+
+// Single column
+text('email').unique()
+text('email').unique('custom_name')
+
+// Composite
+pgTable('example', {
+  a: integer('a'),
+  b: integer('b'),
+}, (t) => [
+  unique().on(t.a, t.b),
+  unique('custom_name').on(t.a, t.b),
+]);
+
+// NULLS NOT DISTINCT (PostgreSQL 15+)
+text('email').unique('idx', { nulls: 'not distinct' })
+```
+
+### Foreign Key
+
+```typescript
+import { foreignKey, AnyPgColumn } from 'drizzle-orm/pg-core';
+
+// Inline
+integer('author_id').references(() => users.id)
+integer('author_id').references(() => users.id, { onDelete: 'cascade', onUpdate: 'no action' })
+
+// Self-referencing — TypeScript requires explicit return type or standalone foreignKey
+// Option 1: AnyPgColumn return type
+integer('parent_id').references((): AnyPgColumn => user.id)
+
+// Option 2: standalone foreignKey operator
+pgTable('user', {
+  id: serial('id'),
+  name: text('name'),
+  parentId: integer('parent_id'),
+}, (t) => [
+  foreignKey({
+    columns: [t.parentId],
+    foreignColumns: [t.id],
+    name: 'user_parent_fk',
+  }),
+]);
+
+// Composite foreign key
+pgTable('order_items', {
+  productId: integer('product_id'),
+  warehouseId: integer('warehouse_id'),
+}, (t) => [
+  foreignKey({
+    columns: [t.productId, t.warehouseId],
+    foreignColumns: [inventory.productId, inventory.warehouseId],
+    name: 'inventory_fk',
+  }).onDelete('cascade'),
+]);
+```
+
+### Check Constraint
+
+```typescript
+import { check } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
+
+pgTable('users', {
+  age: integer('age'),
+}, (t) => [
+  check('age_check', sql`${t.age} >= 0 AND ${t.age} <= 120`),
+]);
+```
+
+---
+
+## Indexes
+
+```typescript
+import { index, uniqueIndex } from 'drizzle-orm/pg-core';
+
+pgTable('users', {
+  id: serial('id').primaryKey(),
+  email: text('email'),
+  name: text('name'),
+  createdAt: timestamp('created_at'),
+}, (t) => [
+  index('email_idx').on(t.email),
+  uniqueIndex('unique_email').on(t.email),
+  index('name_created_idx').on(t.name, t.createdAt),
+]);
+
+// Advanced index options (Drizzle 0.31.0+)
+index('advanced_idx')
+  .on(t.email.asc(), t.createdAt.desc().nullsLast())
+  .concurrently()
+  .where(sql`${t.email} IS NOT NULL`)
+  .with({ fillfactor: '70' })
+
+// Using specific index type
+index('gin_idx')
+  .using('gin', t.tags)
+```
+
+---
+
+## Custom Types
+
+Create reusable column types with custom serialization/deserialization:
+
+```typescript
+import { customType } from 'drizzle-orm/pg-core';
+
+// Basic custom type
+const customSerial = customType<{ data: number }>({
+  dataType() {
+    return 'serial';
+  },
+});
+
+// Custom JSONB with type-safe parsing
+const customJsonb = <TData>(name: string) =>
+  customType<{ data: TData; driverData: string }>({
+    dataType() {
+      return 'jsonb';
+    },
+    toDriver(value: TData): string {
+      return JSON.stringify(value);
+    },
+    fromDriver(value: string): TData {
+      return JSON.parse(value) as TData;
+    },
+  })(name);
+
+// Custom timestamp with config
+const customTimestamp = customType<{
+  data: Date;
+  driverData: string;
+  config: { withTimezone: boolean; precision?: number };
+}>({
+  dataType(config) {
+    const precision = config.precision !== undefined ? ` (${config.precision})` : '';
+    return `timestamp${precision}${config.withTimezone ? ' with time zone' : ''}`;
+  },
+  fromDriver(value: string): Date {
+    return new Date(value);
+  },
+});
+
+// Usage
+export const users = pgTable('users', {
+  id: customSerial('id').primaryKey(),
+  settings: customJsonb<{ theme: string; notifications: boolean }>('settings'),
+  createdAt: customTimestamp('created_at', { withTimezone: true }).defaultNow(),
+});
+```
+
+---
+
+## Generated Columns
+
+Columns computed by the database (stored or virtual):
+
+```typescript
+import { sql } from 'drizzle-orm';
+import { text, integer, pgTable } from 'drizzle-orm/pg-core';
+
+export const users = pgTable('users', {
+  firstName: text('first_name'),
+  lastName: text('last_name'),
+  
+  // Static SQL expression
+  greeting: text('greeting').generatedAlwaysAs(sql`'Hello!'`),
+  
+  // Reference other columns (use callback for forward references)
+  fullName: text('full_name').generatedAlwaysAs(
+    (): SQL => sql`${users.firstName} || ' ' || ${users.lastName}`
+  ),
+});
+
+export const products = pgTable('products', {
+  price: integer('price'),
+  quantity: integer('quantity'),
+  
+  // Computed total
+  total: integer('total').generatedAlwaysAs(
+    (): SQL => sql`${products.price} * ${products.quantity}`
+  ),
+});
+```
+
+**Note:** Generated column support varies by database. PostgreSQL supports STORED generated columns.
+
+---
+
+## PostgreSQL Features
+
+### Schemas
+
+```typescript
+import { pgSchema } from 'drizzle-orm/pg-core';
+
+const mySchema = pgSchema('my_schema');
+
+const users = mySchema.table('users', {
+  id: serial('id').primaryKey(),
+});
+```
+
+### Enums
+
+```typescript
+import { pgEnum } from 'drizzle-orm/pg-core';
+
+const roleEnum = pgEnum('role', ['admin', 'user', 'guest']);
+
+const users = pgTable('users', {
+  role: roleEnum('role').default('user'),
+});
+```
+
+### Sequences
+
+```typescript
+import { pgSequence } from 'drizzle-orm/pg-core';
+
+const orderSeq = pgSequence('order_seq', {
+  startWith: 1000,
+  increment: 1,
+  minValue: 1000,
+  maxValue: 999999,
+  cycle: false,
+  cache: 10,
+});
+```
+
+### Views
+
+```typescript
+import { pgView } from 'drizzle-orm/pg-core';
+
+// Query builder view
+const activeUsers = pgView('active_users').as((qb) =>
+  qb.select().from(users).where(eq(users.active, true))
+);
+
+// Raw SQL view (must define columns)
+const stats = pgView('stats', {
+  userId: integer('user_id'),
+  postCount: integer('post_count'),
+}).as(sql`SELECT user_id, COUNT(*) as post_count FROM posts GROUP BY user_id`);
+
+// Existing view (ignored by migrations)
+const externalView = pgView('external', { id: serial('id') }).existing();
+```
+
+### Materialized Views
+
+```typescript
+import { pgMaterializedView } from 'drizzle-orm/pg-core';
+
+const summary = pgMaterializedView('summary').as((qb) =>
+  qb.select({ total: count() }).from(orders)
+);
+
+// Refresh at runtime
+await db.refreshMaterializedView(summary);
+await db.refreshMaterializedView(summary).concurrently();
+await db.refreshMaterializedView(summary).withNoData();
+```
+
+---
+
+## Schema Organization
+
+### Single File
+
+```
+src/db/schema.ts
+```
+
+### Multiple Files
+
+```
+src/db/schema/
+  users.ts
+  posts.ts
+  index.ts  // Re-exports all
+```
+
+```typescript
+// drizzle.config.ts
+export default defineConfig({
+  schema: './src/db/schema',  // Points to folder
+});
+```
+
+### Reusable Columns
+
+```typescript
+// columns.helpers.ts
+export const timestamps = {
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').$onUpdate(() => new Date()),
+  deletedAt: timestamp('deleted_at'),
+};
+
+// users.ts
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  name: text('name'),
+  ...timestamps,
+});
+```
+
+### Column Name Mapping
+
+```typescript
+// Auto camelCase -> snake_case
+const db = drizzle(pool, { casing: 'snake_case' });
+
+// Then in schema, use camelCase
+pgTable('users', {
+  firstName: varchar('firstName'),  // Maps to first_name in DB
+});
+```
+
+### Multi-Project Schema (Table Creator)
+
+For shared databases with multiple projects, prefix table names:
+
+```typescript
+// schema.ts
+import { pgTableCreator, serial, text } from 'drizzle-orm/pg-core';
+
+// All tables will have 'myapp_' prefix
+const pgTable = pgTableCreator((name) => `myapp_${name}`);
+
+export const users = pgTable('users', {  // Creates 'myapp_users'
+  id: serial('id').primaryKey(),
+  name: text('name'),
+});
+
+export const posts = pgTable('posts', {  // Creates 'myapp_posts'
+  id: serial('id').primaryKey(),
+  title: text('title'),
+});
+```
+
+```typescript
+// drizzle.config.ts
+export default defineConfig({
+  schema: './src/db/schema.ts',
+  tablesFilter: ['myapp_*'],  // Only manage prefixed tables
+  dialect: 'postgresql',
+});
+```
+
+### Type Inference
+
+```typescript
+import { InferSelectModel, InferInsertModel } from 'drizzle-orm';
+
+// Preferred syntax
+type User = typeof users.$inferSelect;
+type NewUser = typeof users.$inferInsert;
+
+// Legacy syntax (still works)
+type UserLegacy = InferSelectModel<typeof users>;
+type NewUserLegacy = InferInsertModel<typeof users>;
+
+// Partial types for updates
+type UserUpdate = Partial<typeof users.$inferInsert>;
+```

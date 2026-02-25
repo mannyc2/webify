@@ -1,0 +1,32 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "webify-web",
+  "compatibility_date": "2025-02-24",
+
+  // D1 database
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "webify-db",
+      "database_id": "a3ba5379-d70c-4c28-ac89-b504ed667e9d"
+    }
+  ],
+
+  // KV for rate limiting / caching
+  "kv_namespaces": [
+    {
+      "binding": "CACHE",
+      "id": "4eac2beed204445d808967906d3d60dc"
+    }
+  ],
+
+  // Queue producer — enqueue manual sync jobs for the sync worker
+  "queues": {
+    "producers": [
+      {
+        "binding": "SYNC_QUEUE",
+        "queue": "webify-sync-jobs"
+      }
+    ]
+  }
+}
