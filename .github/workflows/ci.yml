@@ -26,6 +26,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
       - name: Apply D1 migrations
+        continue-on-error: true
         working-directory: apps/sync
         run: bunx wrangler d1 migrations apply webify-db --remote
         env:
