@@ -65,7 +65,7 @@ export async function fetchProducts(
   while (true) {
     const url = `https://${domain}/products.json?limit=250&page=${page}`;
     const response = await fetcher(url, {
-      headers: { Accept: "application/json" },
+      headers: { Accept: "application/json", "User-Agent": "Webify/1.0" },
     });
 
     if (!response.ok) {
