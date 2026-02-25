@@ -3,6 +3,10 @@
   "name": "webify-web",
   "compatibility_date": "2025-02-24",
   "compatibility_flags": ["nodejs_compat"],
+  "main": "./worker/index.ts",
+  "assets": {
+    "not_found_handling": "none"
+  },
 
   // D1 database
   "d1_databases": [
