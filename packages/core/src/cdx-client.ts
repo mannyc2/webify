@@ -76,8 +76,7 @@ export async function queryCdx(
 }
 
 function parseCdxRow(row: string[]): WaybackSnapshot {
-  const [_urlkey, timestamp, original, mimetype, statuscode, digest, length] =
-    row;
+  const [, timestamp, original, mimetype, statuscode, digest, length] = row;
 
   // Extract handle from URL path: /products/{handle}
   const handleMatch = original.match(/\/products\/([^/?#]+)/);
