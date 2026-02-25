@@ -1,6 +1,5 @@
 "use client"
 
-import { use } from "react"
 import { ImageIcon } from "lucide-react"
 import type { Variant } from "@webify/db"
 import { Header } from "@/components/layout/header"
@@ -14,9 +13,9 @@ import { useProduct } from "@/hooks/use-product"
 export default function ProductDetailPage({
   params,
 }: {
-  params: Promise<{ storeId: string; productId: string }>
+  params: { storeId: string; productId: string }
 }) {
-  const { storeId, productId } = use(params)
+  const { storeId, productId } = params
   const { data: product, isPending, error } = useProduct(storeId, productId)
 
   if (isPending) {

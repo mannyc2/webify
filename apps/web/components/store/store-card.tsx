@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { Store as StoreIcon } from "lucide-react"
+import { Store as StoreIcon, Trash2Icon } from "lucide-react"
 import {
   Card,
   CardContent,
@@ -7,14 +7,16 @@ import {
   CardTitle,
   CardDescription,
 } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
 import type { Store, SyncStatus as SyncStatusType } from "@webify/db"
 import { SyncStatus } from "@/components/shared/sync-status"
 
 interface StoreCardProps {
   store: Store
+  onDelete?: (domain: string) => Promise<unknown>
 }
 
-export function StoreCard({ store }: StoreCardProps) {
+export function StoreCard({ store, onDelete }: StoreCardProps) {
   const previewUrls: string[] = (() => {
     try {
       return JSON.parse(store.cachedPreviewImageUrls)
@@ -35,6 +37,19 @@ export function StoreCard({ store }: StoreCardProps) {
               <CardTitle className="truncate">{store.name}</CardTitle>
               <CardDescription className="truncate">{store.domain}</CardDescription>
             </div>
+            {onDelete && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="text-muted-foreground hover:text-destructive shrink-0"
+                onClick={(e) => {
+                  e.preventDefault()
+                  onDelete(store.domain)
+                }}
+              >
+                <Trash2Icon className="size-4" />
+              </Button>
+            )}
           </div>
         </CardHeader>
         <CardContent className="space-y-3">

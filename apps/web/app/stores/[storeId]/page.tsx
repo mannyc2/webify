@@ -1,6 +1,5 @@
 "use client"
 
-import { use } from "react"
 import { RefreshCwIcon } from "lucide-react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import type { SyncStatus as SyncStatusType } from "@webify/db"
@@ -14,9 +13,9 @@ import { storeResponseSchema } from "@/lib/api/schemas"
 export default function StoreDetailPage({
   params,
 }: {
-  params: Promise<{ storeId: string }>
+  params: { storeId: string }
 }) {
-  const { storeId } = use(params)
+  const { storeId } = params
   const queryClient = useQueryClient()
 
   const { data: store } = useQuery({

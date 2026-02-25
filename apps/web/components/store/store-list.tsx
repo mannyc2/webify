@@ -11,6 +11,7 @@ import type { ReactNode } from "react"
 interface StoreListProps {
   stores: Store[]
   isLoading: boolean
+  onDelete?: (domain: string) => Promise<unknown>
   emptyAction?: ReactNode
 }
 
@@ -41,7 +42,7 @@ function StoreCardSkeleton() {
   )
 }
 
-export function StoreList({ stores, isLoading, emptyAction }: StoreListProps) {
+export function StoreList({ stores, isLoading, onDelete, emptyAction }: StoreListProps) {
   if (isLoading) {
     return (
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -70,7 +71,7 @@ export function StoreList({ stores, isLoading, emptyAction }: StoreListProps) {
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
       {stores.map((store) => (
-        <StoreCard key={store.domain} store={store} />
+        <StoreCard key={store.domain} store={store} onDelete={onDelete} />
       ))}
     </div>
   )

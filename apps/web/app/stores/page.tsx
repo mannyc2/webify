@@ -6,7 +6,7 @@ import { AddStoreDialog } from "@/components/store/add-store-dialog"
 import { useStores } from "@/hooks/use-stores"
 
 export default function StoresPage() {
-  const { stores, isLoading, addStore } = useStores()
+  const { stores, isLoading, addStore, deleteStore } = useStores()
 
   return (
     <div className="space-y-6">
@@ -18,6 +18,7 @@ export default function StoresPage() {
       <StoreList
         stores={stores}
         isLoading={isLoading}
+        onDelete={deleteStore}
         emptyAction={<AddStoreDialog onAdd={addStore} />}
       />
     </div>
