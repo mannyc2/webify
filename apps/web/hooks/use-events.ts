@@ -1,7 +1,8 @@
 "use client"
 
+import { useMemo } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import type { ChangeEvent } from "@webify/db"
+import type { ChangeEvent, ChangeType } from "@webify/db"
 import { queryKeys } from "@/lib/query-keys"
 import { eventsResponseSchema } from "@/lib/api/schemas"
 
@@ -14,7 +15,59 @@ export interface EventFilters {
   limit?: number
 }
 
-async function fetchEvents(storeId: string | undefined, filters: EventFilters): Promise<ChangeEvent[]> {
+export interface EventSummary {
+  unreadCount: number
+  todayCounts: Partial<Record<ChangeType, number>>
+  headline: ChangeEvent | null
+}
+
+const MAGNITUDE_ORDER: Record<string, number> = { large: 0, medium: 1, small: 2 }
+
+export function sortByMagnitude(events: ChangeEvent[]): ChangeEvent[] {
+  return [...events].sort((a, b) => {
+    const magDiff =
+      (MAGNITUDE_ORDER[a.magnitude] ?? 1) - (MAGNITUDE_ORDER[b.magnitude] ?? 1)
+    if (magDiff !== 0) return magDiff
+    return new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime()
+  })
+}
+
+function computeSummary(events: ChangeEvent[]): EventSummary {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+
+  let unreadCount = 0
+  const todayCounts: Partial<Record<ChangeType, number>> = {}
+  let headline: ChangeEvent | null = null
+
+  for (const event of events) {
+    if (!event.isRead) {
+      unreadCount++
+      if (
+        !headline ||
+        (MAGNITUDE_ORDER[event.magnitude] ?? 1) <
+          (MAGNITUDE_ORDER[headline.magnitude] ?? 1) ||
+        ((MAGNITUDE_ORDER[event.magnitude] ?? 1) ===
+          (MAGNITUDE_ORDER[headline.magnitude] ?? 1) &&
+          new Date(event.occurredAt) > new Date(headline.occurredAt))
+      ) {
+        headline = event
+      }
+    }
+
+    if (new Date(event.occurredAt) >= today) {
+      const ct = event.changeType as ChangeType
+      todayCounts[ct] = (todayCounts[ct] ?? 0) + 1
+    }
+  }
+
+  return { unreadCount, todayCounts, headline }
+}
+
+async function fetchEvents(
+  storeId: string | undefined,
+  filters: EventFilters,
+): Promise<ChangeEvent[]> {
   const params = new URLSearchParams()
   if (filters.store) params.set("store", filters.store)
   if (filters.type) params.set("type", filters.type)
@@ -24,7 +77,7 @@ async function fetchEvents(storeId: string | undefined, filters: EventFilters): 
   if (filters.limit) params.set("limit", String(filters.limit))
 
   const qs = params.toString()
-  const base = storeId ? `/api/stores/${storeId}/events` : "/api/events"
+  const base = storeId ? `/api/stores/${storeId}/changes` : "/api/changes"
   const url = `${base}${qs ? `?${qs}` : ""}`
   const res = await fetch(url)
   if (!res.ok) throw new Error("Failed to fetch events")
@@ -44,9 +97,12 @@ export function useEvents(storeId?: string, filters: EventFilters = {}) {
     queryFn: () => fetchEvents(storeId, filters),
   })
 
+  const events = query.data ?? []
+  const summary = useMemo(() => computeSummary(events), [events])
+
   const markReadMutation = useMutation({
     mutationFn: async (eventId: string) => {
-      const res = await fetch(`/api/events/${eventId}`, {
+      const res = await fetch(`/api/changes/${eventId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ is_read: true }),
@@ -60,7 +116,7 @@ export function useEvents(storeId?: string, filters: EventFilters = {}) {
 
   const markAllReadMutation = useMutation({
     mutationFn: async (eventIds: string[]) => {
-      const res = await fetch("/api/events/mark-read", {
+      const res = await fetch("/api/changes/mark-read", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ event_ids: eventIds }),
@@ -73,7 +129,8 @@ export function useEvents(storeId?: string, filters: EventFilters = {}) {
   })
 
   return {
-    events: query.data ?? [],
+    events,
+    summary,
     isLoading: query.isPending,
     error: query.error ?? undefined,
     refresh: query.refetch,
