@@ -14,11 +14,16 @@
   "scripts": {
     "test": "bun run --filter '*' test",
     "typecheck": "bun run --filter '*' typecheck",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "prepare": "git config core.hooksPath .githooks"
+  },
+  "lint-staged": {
+    "*.{ts,tsx}": "eslint"
   },
   "devDependencies": {
-    "eslint": "^9",
     "@eslint/js": "^9",
+    "eslint": "^9",
+    "lint-staged": "^16.2.7",
     "typescript-eslint": "^8"
   }
 }
