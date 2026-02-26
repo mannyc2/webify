@@ -7,11 +7,20 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from "@/components/ui/chart"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { useSnapshots } from "@/hooks/use-snapshots"
 
 interface PriceHistoryChartProps {
   productId: number
   variantId: number
+  variants?: Array<{ id: number; title: string }>
+  onVariantChange?: (variantId: number) => void
 }
 
 const chartConfig = {
@@ -21,23 +30,51 @@ const chartConfig = {
   },
 } satisfies ChartConfig
 
-export function PriceHistoryChart({ productId, variantId }: PriceHistoryChartProps) {
+export function PriceHistoryChart({ productId, variantId, variants, onVariantChange }: PriceHistoryChartProps) {
   const { data: snapshots, isPending } = useSnapshots(productId, variantId)
+
+  const variantSelector =
+    variants && variants.length > 1 && onVariantChange ? (
+      <div className="mb-4 flex items-center gap-2">
+        <span className="text-muted-foreground text-sm">Variant:</span>
+        <Select
+          value={variantId}
+          onValueChange={(v) => onVariantChange(Number(v))}
+        >
+          <SelectTrigger size="sm">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {variants.map((v) => (
+              <SelectItem key={v.id} value={v.id}>
+                {v.title}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    ) : null
 
   if (isPending) {
     return (
-      <div className="bg-muted flex h-[300px] items-center justify-center rounded-xl">
-        <span className="text-muted-foreground text-sm">Loading chart...</span>
+      <div>
+        {variantSelector}
+        <div className="bg-muted flex h-[300px] items-center justify-center rounded-xl">
+          <span className="text-muted-foreground text-sm">Loading chart...</span>
+        </div>
       </div>
     )
   }
 
   if (!snapshots || snapshots.length < 2) {
     return (
-      <div className="bg-muted flex h-[300px] items-center justify-center rounded-xl">
-        <span className="text-muted-foreground text-sm">
-          Not enough data for a price chart yet.
-        </span>
+      <div>
+        {variantSelector}
+        <div className="bg-muted flex h-[300px] items-center justify-center rounded-xl">
+          <span className="text-muted-foreground text-sm">
+            Not enough data for a price chart yet.
+          </span>
+        </div>
       </div>
     )
   }
@@ -51,7 +88,9 @@ export function PriceHistoryChart({ productId, variantId }: PriceHistoryChartPro
   }))
 
   return (
-    <ChartContainer config={chartConfig} className="h-[300px] w-full">
+    <div>
+      {variantSelector}
+      <ChartContainer config={chartConfig} className="h-[300px] w-full">
       <LineChart data={chartData} accessibilityLayer>
         <CartesianGrid vertical={false} />
         <XAxis
@@ -82,5 +121,6 @@ export function PriceHistoryChart({ productId, variantId }: PriceHistoryChartPro
         />
       </LineChart>
     </ChartContainer>
+    </div>
   )
 }
