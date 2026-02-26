@@ -1,9 +1,8 @@
 "use client"
 
-import { CheckCheckIcon, ShieldAlertIcon, MailIcon } from "lucide-react"
+import { ShieldAlertIcon } from "lucide-react"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
 import type { Store } from "@webify/db"
 
@@ -26,13 +25,23 @@ interface ActivityFiltersProps {
   onViewChange: (view: ViewMode) => void
   activeStores: Set<string>
   onStoreToggle: (domain: string) => void
+  storeEventCounts: Map<string, number>
   majorOnly: boolean
   onMajorOnlyToggle: () => void
-  unreadOnly: boolean
-  onUnreadOnlyToggle: () => void
-  unreadCount: number
-  onMarkAllRead: () => void
+  activeChangeTypes: Set<string>
+  onChangeTypeToggle: (type: string) => void
+  changeTypeCounts: Record<string, number>
 }
+
+const CHANGE_TYPE_CHIPS: {
+  key: string
+  label: string
+  dotColor: string
+}[] = [
+  { key: "priceDrops", label: "Price Drops", dotColor: "bg-emerald-500" },
+  { key: "stockChanges", label: "Stock", dotColor: "bg-amber-500" },
+  { key: "newProducts", label: "New", dotColor: "bg-blue-500" },
+]
 
 export function ActivityFilters({
   stores,
@@ -40,12 +49,12 @@ export function ActivityFilters({
   onViewChange,
   activeStores,
   onStoreToggle,
+  storeEventCounts,
   majorOnly,
   onMajorOnlyToggle,
-  unreadOnly,
-  onUnreadOnlyToggle,
-  unreadCount,
-  onMarkAllRead,
+  activeChangeTypes,
+  onChangeTypeToggle,
+  changeTypeCounts,
 }: ActivityFiltersProps) {
   return (
     <div className="sticky top-0 z-10 flex flex-wrap items-center gap-3 border-b bg-background/80 py-2.5 backdrop-blur-sm md:flex-nowrap md:gap-4">
@@ -64,26 +73,61 @@ export function ActivityFilters({
 
       {/* Center — Filter Chips */}
       <div className="flex flex-1 items-center gap-1.5 overflow-x-auto">
-        {stores.map((store, i) => (
-          <Button
-            key={store.domain}
-            variant={activeStores.has(store.domain) ? "secondary" : "outline"}
-            size="xs"
-            onClick={() => onStoreToggle(store.domain)}
-            className={cn(
-              "shrink-0",
-              activeStores.has(store.domain) && "ring-1 ring-ring/30",
-            )}
-          >
-            <span
+        {stores.map((store, i) => {
+          const count = storeEventCounts.get(store.domain) ?? 0
+          return (
+            <Button
+              key={store.domain}
+              variant={activeStores.has(store.domain) ? "secondary" : "outline"}
+              size="xs"
+              onClick={() => onStoreToggle(store.domain)}
               className={cn(
-                "size-1.5 rounded-full",
-                STORE_DOT_COLORS[i % STORE_DOT_COLORS.length],
+                "shrink-0",
+                activeStores.has(store.domain) && "ring-1 ring-ring/30",
               )}
-            />
-            {store.name}
-          </Button>
-        ))}
+            >
+              <span
+                className={cn(
+                  "size-1.5 rounded-full",
+                  STORE_DOT_COLORS[i % STORE_DOT_COLORS.length],
+                )}
+              />
+              {store.name}
+              {count > 0 && (
+                <span className="ml-1 text-[10px] text-muted-foreground">
+                  {count}
+                </span>
+              )}
+            </Button>
+          )
+        })}
+
+        <div className="mx-1 h-4 w-px bg-border" />
+
+        {CHANGE_TYPE_CHIPS.map(({ key, label, dotColor }) => {
+          const count = changeTypeCounts[key] ?? 0
+          return (
+            <Button
+              key={key}
+              variant={activeChangeTypes.has(key) ? "secondary" : "outline"}
+              size="xs"
+              onClick={() => onChangeTypeToggle(key)}
+              className={cn(
+                "shrink-0",
+                activeChangeTypes.has(key) && "ring-1 ring-ring/30",
+              )}
+            >
+              <span className={cn("size-1.5 rounded-full", dotColor)} />
+              {label}
+              {count > 0 && (
+                <span className="ml-1 text-[10px] text-muted-foreground">
+                  {count}
+                </span>
+              )}
+            </Button>
+          )
+        })}
+
         <Button
           variant={majorOnly ? "secondary" : "outline"}
           size="xs"
@@ -92,29 +136,6 @@ export function ActivityFilters({
         >
           <ShieldAlertIcon className="size-3" />
           Major Only
-        </Button>
-        <Button
-          variant={unreadOnly ? "secondary" : "outline"}
-          size="xs"
-          onClick={onUnreadOnlyToggle}
-          className={cn("shrink-0", unreadOnly && "ring-1 ring-ring/30")}
-        >
-          <MailIcon className="size-3" />
-          Unread Only
-        </Button>
-      </div>
-
-      {/* Right — Actions */}
-      <div className="flex shrink-0 items-center gap-2">
-        {unreadCount > 0 && <Badge variant="secondary">{unreadCount}</Badge>}
-        <Button
-          variant="outline"
-          size="xs"
-          onClick={onMarkAllRead}
-          disabled={unreadCount === 0}
-        >
-          <CheckCheckIcon className="size-3" />
-          Mark All Read
         </Button>
       </div>
     </div>

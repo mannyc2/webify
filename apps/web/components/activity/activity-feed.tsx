@@ -2,7 +2,7 @@
 
 import { useMemo } from "react"
 import { ActivityIcon } from "lucide-react"
-import { ChangeType } from "@webify/db"
+import { ChangeType, ChangeMagnitude } from "@webify/db"
 import type { ChangeEvent, Store } from "@webify/db"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
@@ -12,14 +12,15 @@ import {
   EmptyTitle,
   EmptyDescription,
 } from "@/components/ui/empty"
+import { EventCard } from "./event-card"
 import { ActivityRow } from "./activity-row"
+import { TickerStrip } from "./ticker-strip"
 import { sortByMagnitude } from "@/hooks/use-events"
 import type { ViewMode } from "./activity-filters"
 
 interface ActivityFeedProps {
   events: ChangeEvent[]
   isLoading: boolean
-  onMarkRead: (id: string) => void
   view: ViewMode
   stores: Store[]
 }
@@ -103,9 +104,45 @@ function groupByType(events: ChangeEvent[]): EventGroup[] {
   })).filter((g) => g.events.length > 0)
 }
 
-function ActivityRowSkeleton({ magnitude = "medium" }: { magnitude?: string }) {
-  if (magnitude === "large") {
-    return (
+function EventGroupSection({
+  group,
+  stores,
+}: {
+  group: EventGroup
+  stores: Store[]
+}) {
+  const largeEvents = group.events.filter(
+    (e) => e.magnitude === ChangeMagnitude.large,
+  )
+  const mediumEvents = group.events.filter(
+    (e) => e.magnitude === ChangeMagnitude.medium,
+  )
+  const smallEvents = group.events.filter(
+    (e) => e.magnitude === ChangeMagnitude.small,
+  )
+
+  return (
+    <div>
+      <h3 className="mb-2 px-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+        {group.label}
+      </h3>
+      <div className="space-y-1">
+        {largeEvents.map((event) => (
+          <EventCard key={event.id} event={event} stores={stores} />
+        ))}
+        {mediumEvents.map((event) => (
+          <ActivityRow key={event.id} event={event} />
+        ))}
+        {smallEvents.length > 0 && <TickerStrip events={smallEvents} />}
+      </div>
+    </div>
+  )
+}
+
+function FeedSkeleton() {
+  return (
+    <div className="space-y-2">
+      {/* Large card skeleton */}
       <div className="flex items-start gap-4 rounded-xl border-l-4 border-l-muted px-4 py-4">
         <Skeleton className="size-10 rounded-xl" />
         <div className="flex-1 space-y-2">
@@ -114,25 +151,30 @@ function ActivityRowSkeleton({ magnitude = "medium" }: { magnitude?: string }) {
         </div>
         <Skeleton className="h-6 w-16" />
       </div>
-    )
-  }
-  if (magnitude === "small") {
-    return (
-      <div className="flex items-center gap-3 px-3 py-2">
-        <Skeleton className="size-4 rounded" />
-        <Skeleton className="h-4 flex-1" />
-        <Skeleton className="h-3 w-10" />
+      {/* Medium row skeletons */}
+      {Array.from({ length: 4 }).map((_, i) => (
+        <div key={i} className="flex items-start gap-3 px-3 py-3">
+          <Skeleton className="size-8 rounded-lg" />
+          <div className="flex-1 space-y-2">
+            <Skeleton className="h-4 w-48" />
+            <Skeleton className="h-3 w-32" />
+          </div>
+          <Skeleton className="h-3 w-12" />
+        </div>
+      ))}
+      {/* Ticker skeleton */}
+      <div className="rounded-xl bg-muted/30 p-3">
+        <Skeleton className="mb-2 h-3 w-24" />
+        <div className="grid grid-cols-1 gap-1 md:grid-cols-2">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="flex items-center gap-2 px-2 py-1">
+              <Skeleton className="size-3.5 rounded" />
+              <Skeleton className="h-3 flex-1" />
+              <Skeleton className="h-3 w-10" />
+            </div>
+          ))}
+        </div>
       </div>
-    )
-  }
-  return (
-    <div className="flex items-start gap-3 px-3 py-3">
-      <Skeleton className="size-8 rounded-lg" />
-      <div className="flex-1 space-y-2">
-        <Skeleton className="h-4 w-48" />
-        <Skeleton className="h-3 w-32" />
-      </div>
-      <Skeleton className="h-3 w-12" />
     </div>
   )
 }
@@ -140,7 +182,6 @@ function ActivityRowSkeleton({ magnitude = "medium" }: { magnitude?: string }) {
 export function ActivityFeed({
   events,
   isLoading,
-  onMarkRead,
   view,
   stores,
 }: ActivityFeedProps) {
@@ -156,17 +197,7 @@ export function ActivityFeed({
   }, [events, view, stores])
 
   if (isLoading) {
-    return (
-      <div className="space-y-2">
-        <ActivityRowSkeleton magnitude="large" />
-        {Array.from({ length: 4 }).map((_, i) => (
-          <ActivityRowSkeleton key={i} />
-        ))}
-        {Array.from({ length: 3 }).map((_, i) => (
-          <ActivityRowSkeleton key={`sm-${i}`} magnitude="small" />
-        ))}
-      </div>
-    )
+    return <FeedSkeleton />
   }
 
   if (events.length === 0) {
@@ -188,20 +219,7 @@ export function ActivityFeed({
   return (
     <div className="space-y-6">
       {groups.map((group) => (
-        <div key={group.label}>
-          <h3 className="mb-2 px-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-            {group.label}
-          </h3>
-          <div className="space-y-0.5">
-            {group.events.map((event) => (
-              <ActivityRow
-                key={event.id}
-                event={event}
-                onMarkRead={onMarkRead}
-              />
-            ))}
-          </div>
-        </div>
+        <EventGroupSection key={group.label} group={group} stores={stores} />
       ))}
     </div>
   )
